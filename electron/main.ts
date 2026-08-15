@@ -152,16 +152,17 @@ function createWindow() {
   const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
   if (VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(VITE_DEV_SERVER_URL);
-    mainWindow.webContents.openDevTools();
+    if (process.env.DEVSTACK_CAPTURE !== "1") {
+      mainWindow.webContents.openDevTools();
+    }
   } else {
     mainWindow.loadFile(join(__dirname, "../dist/index.html"));
   }
 
   // 窗口准备好后显示
   mainWindow.once("ready-to-show", () => {
-    // 检查是否开机自启且静默启动
     const startMinimized = configStore.get("startMinimized");
-    if (!startMinimized) {
+    if (process.env.DEVSTACK_CAPTURE === "1" || !startMinimized) {
       mainWindow?.show();
     }
   });
