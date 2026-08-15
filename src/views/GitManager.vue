@@ -441,14 +441,13 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
+  padding: 12px 14px;
   border: 1px solid var(--border-color);
-  border-radius: 12px;
-  margin-bottom: 12px;
+  border-radius: var(--radius-md);
+  margin-bottom: 8px;
   
   &.active {
-    border-color: var(--success-color);
-    background: rgba(103, 194, 58, 0.05);
+    background: var(--select-fill);
   }
   
   .version-info {
@@ -458,16 +457,16 @@ onUnmounted(() => {
   }
   
   .version-icon {
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
     border-radius: var(--radius-md);
-    background: var(--accent-bg);
-    border: 1px solid var(--accent-border);
+    background: var(--bg-input);
+    border: none;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--accent-color);
-    font-size: 20px;
+    color: var(--text-secondary);
+    font-size: 18px;
   }
   
   .version-details {
@@ -504,13 +503,11 @@ onUnmounted(() => {
   transition: all 0.2s;
   
   &:hover {
-    border-color: var(--accent-light);
     background: var(--bg-hover);
   }
   
   &.selected {
-    border-color: var(--accent-color);
-    background: rgba(124, 58, 237, 0.05);
+    background: var(--select-fill);
   }
   
   .version-select-info {

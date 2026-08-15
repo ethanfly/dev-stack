@@ -1,74 +1,115 @@
 <template>
   <div class="page-container">
-    <div class="page-header">
-      <h1 class="page-title">
-        <span class="title-icon"><el-icon><Odometer /></el-icon></span>
-        仪表盘
-      </h1>
-      <p class="page-description">服务状态概览与快捷操作</p>
-    </div>
-
-    <!-- 服务状态卡片 -->
-    <div class="status-grid">
-      <div 
-        v-for="service in services" 
-        :key="service.name" 
-        class="status-card"
-        :class="{ running: service.running }"
-      >
-        <div class="status-header">
-          <div class="service-icon">
-            <el-icon><component :is="service.icon" /></el-icon>
-          </div>
-          <div class="service-info">
-            <h3 class="service-name">{{ service.displayName }}</h3>
-            <span class="status-tag" :class="service.running ? 'running' : 'stopped'">
-              <span class="status-dot"></span>
-              {{ service.running ? '运行中' : '已停止' }}
-            </span>
-          </div>
+    <div class="hero">
+      <div class="hero-copy">
+        <p class="hero-kicker">全局开发依赖</p>
+        <h1 class="page-title hero-title">{{ APP_NAME }}</h1>
+        <p class="page-description">{{ APP_TAGLINE }}</p>
+      </div>
+      <div class="stat-strip">
+        <div class="stat">
+          <div class="stat-value">{{ store.runningServiceCount }}</div>
+          <div class="stat-label">服务运行中</div>
         </div>
-        <div class="status-actions">
-          <el-button 
-            v-if="!service.running" 
-            type="success" 
-            size="small" 
-            @click="startService(service)"
-            :loading="service.loading"
-          >
-            <el-icon><VideoPlay /></el-icon>
-            启动
-          </el-button>
-          <el-button 
-            v-else 
-            type="danger" 
-            size="small" 
-            @click="stopService(service)"
-            :loading="service.loading"
-          >
-            <el-icon><VideoPause /></el-icon>
-            停止
-          </el-button>
-          <el-button 
-            size="small" 
-            @click="restartService(service)"
-            :loading="service.loading"
-            :disabled="!service.running"
-          >
-            <el-icon><RefreshRight /></el-icon>
-            重启
-          </el-button>
+        <div class="stat">
+          <div class="stat-value">{{ installedRuntimeCount }}</div>
+          <div class="stat-label">已装运行时</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">{{ sites.length }}</div>
+          <div class="stat-label">站点</div>
         </div>
       </div>
     </div>
 
-    <!-- PHP-CGI 服务状态卡片 -->
-    <div v-if="phpCgiServices.length > 0" class="php-cgi-section">
+    <section class="stack-section">
       <div class="section-header">
-        <h2 class="section-title">
-          <el-icon><Files /></el-icon>
-          PHP-CGI 进程
-        </h2>
+        <h2 class="section-title">运行时</h2>
+        <p class="section-hint">语言与工具链，与后台服务并列管理</p>
+      </div>
+      <div class="runtime-grid">
+        <router-link
+          v-for="runtime in runtimes"
+          :key="runtime.id"
+          :to="runtime.path"
+          class="runtime-card"
+          :class="{ ready: runtime.installed }"
+        >
+          <div class="runtime-top">
+            <div class="service-icon">
+              <el-icon><component :is="runtime.icon" /></el-icon>
+            </div>
+            <el-tag v-if="runtime.installed" type="success" size="small">已安装</el-tag>
+            <el-tag v-else type="info" size="small">未安装</el-tag>
+          </div>
+          <h3 class="service-name">{{ runtime.label }}</h3>
+          <p class="runtime-meta">{{ runtime.summary }}</p>
+        </router-link>
+      </div>
+    </section>
+
+    <section class="stack-section">
+      <div class="section-header">
+        <h2 class="section-title">后台服务</h2>
+        <p class="section-hint">本机依赖进程，可单独启停</p>
+      </div>
+      <div class="status-grid">
+        <div
+          v-for="service in services"
+          :key="service.name"
+          class="status-card"
+          :class="{ running: service.running }"
+        >
+          <div class="status-header">
+            <div class="service-icon">
+              <el-icon><component :is="service.icon" /></el-icon>
+            </div>
+            <div class="service-info">
+              <h3 class="service-name">{{ service.displayName }}</h3>
+              <span class="status-tag" :class="service.running ? 'running' : 'stopped'">
+                <span class="status-dot"></span>
+                {{ service.running ? '运行中' : '已停止' }}
+              </span>
+            </div>
+          </div>
+          <div class="status-actions">
+            <el-button
+              v-if="!service.running"
+              type="success"
+              size="small"
+              @click="startService(service)"
+              :loading="service.loading"
+            >
+              <el-icon><VideoPlay /></el-icon>
+              启动
+            </el-button>
+            <el-button
+              v-else
+              type="danger"
+              size="small"
+              @click="stopService(service)"
+              :loading="service.loading"
+            >
+              <el-icon><VideoPause /></el-icon>
+              停止
+            </el-button>
+            <el-button
+              size="small"
+              @click="restartService(service)"
+              :loading="service.loading"
+              :disabled="!service.running"
+            >
+              <el-icon><RefreshRight /></el-icon>
+              重启
+            </el-button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section v-if="phpCgiServices.length > 0" class="stack-section">
+      <div class="section-header">
+        <h2 class="section-title">PHP FastCGI</h2>
         <div class="section-actions">
           <el-button type="success" size="small" @click="startAllPhpCgi">
             <el-icon><VideoPlay /></el-icon>
@@ -81,9 +122,9 @@
         </div>
       </div>
       <div class="status-grid">
-        <div 
-          v-for="service in phpCgiServices" 
-          :key="service.name" 
+        <div
+          v-for="service in phpCgiServices"
+          :key="service.name"
           class="status-card php-cgi-card"
           :class="{ running: service.running }"
         >
@@ -101,28 +142,28 @@
             </div>
           </div>
           <div class="status-actions">
-            <el-button 
-              v-if="!service.running" 
-              type="success" 
-              size="small" 
+            <el-button
+              v-if="!service.running"
+              type="success"
+              size="small"
               @click="startPhpCgi(service)"
               :loading="service.loading"
             >
               <el-icon><VideoPlay /></el-icon>
               启动
             </el-button>
-            <el-button 
-              v-else 
-              type="danger" 
-              size="small" 
+            <el-button
+              v-else
+              type="danger"
+              size="small"
               @click="stopPhpCgi(service)"
               :loading="service.loading"
             >
               <el-icon><VideoPause /></el-icon>
               停止
             </el-button>
-            <el-button 
-              size="small" 
+            <el-button
+              size="small"
               @click="restartPhpCgi(service)"
               :loading="service.loading"
               :disabled="!service.running"
@@ -133,169 +174,62 @@
           </div>
         </div>
       </div>
-    </div>
-    <div v-else class="php-cgi-empty">
-      <el-alert type="info" :closable="false">
-        <template #title>
-          暂未安装 PHP，请先到 <router-link to="/php">PHP 管理</router-link> 安装 PHP 版本
-        </template>
-      </el-alert>
-    </div>
+    </section>
 
-    <!-- 快捷信息 -->
-    <div class="info-grid">
-      <!-- PHP 版本 -->
-      <div class="card">
-        <div class="card-header">
-          <span class="card-title">
-            <el-icon><Files /></el-icon>
-            PHP 版本
-          </span>
-          <router-link to="/php" class="view-more">
-            管理 <el-icon><ArrowRight /></el-icon>
-          </router-link>
-        </div>
-        <div class="card-content">
-          <div v-if="phpVersions.length > 0" class="version-list">
-            <div 
-              v-for="version in phpVersions" 
-              :key="version.version"
-              class="mini-version-card"
-              :class="{ active: version.isActive }"
-            >
-              <span class="version-number">PHP {{ version.version }}</span>
-              <div class="version-actions">
-                <el-tag v-if="version.isActive" type="success" size="small">当前</el-tag>
-                <el-button 
-                  v-else 
-                  type="primary" 
-                  size="small" 
-                  @click="setActivePhp(version.version)"
-                  :loading="settingPhp === version.version"
-                >
-                  设为默认
-                </el-button>
-              </div>
-            </div>
-          </div>
-          <div v-else class="empty-hint">
-            <span>暂未安装 PHP</span>
-            <router-link to="/php">去安装</router-link>
-          </div>
-        </div>
-      </div>
-
-      <!-- Node.js 版本 -->
-      <div class="card">
-        <div class="card-header">
-          <span class="card-title">
-            <el-icon><Promotion /></el-icon>
-            Node.js 版本
-          </span>
-          <router-link to="/nodejs" class="view-more">
-            管理 <el-icon><ArrowRight /></el-icon>
-          </router-link>
-        </div>
-        <div class="card-content">
-          <div v-if="nodeVersions.length > 0" class="version-list">
-            <div 
-              v-for="version in nodeVersions" 
-              :key="version.version"
-              class="mini-version-card"
-              :class="{ active: version.isActive }"
-            >
-              <span class="version-number">Node {{ version.version }}</span>
-              <div class="version-actions">
-                <el-tag v-if="version.isActive" type="success" size="small">当前</el-tag>
-                <el-button 
-                  v-else 
-                  type="primary" 
-                  size="small" 
-                  @click="setActiveNode(version.version)"
-                  :loading="settingNode === version.version"
-                >
-                  设为默认
-                </el-button>
-              </div>
-            </div>
-          </div>
-          <div v-else class="empty-hint">
-            <span>暂未安装 Node.js</span>
-            <router-link to="/nodejs">去安装</router-link>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 站点信息 -->
-    <div class="info-grid single">
-      <!-- 站点列表 -->
-      <div class="card">
-        <div class="card-header">
-          <span class="card-title">
-            <el-icon><Monitor /></el-icon>
-            站点列表
-          </span>
+    <footer class="dash-footer">
+      <div class="footer-col">
+        <div class="footer-head">
+          <h2 class="section-title">工作区</h2>
           <router-link to="/sites" class="view-more">
-            管理 <el-icon><ArrowRight /></el-icon>
+            管理站点 <el-icon><ArrowRight /></el-icon>
           </router-link>
         </div>
-        <div class="card-content">
-          <div v-if="sites.length > 0" class="site-list">
-            <div 
-              v-for="site in sites.slice(0, 5)" 
-              :key="site.name"
-              class="mini-site-card"
+        <div v-if="sites.length > 0" class="site-list">
+          <div
+            v-for="site in sites.slice(0, 4)"
+            :key="site.name"
+            class="mini-site-card"
+          >
+            <a
+              href="#"
+              class="site-domain-link"
+              @click.prevent="openSite(site)"
             >
-              <a 
-                href="#"
-                class="site-domain-link"
-                @click.prevent="openSite(site)"
-              >
-                {{ site.domain }}
-                <el-icon class="link-icon"><Link /></el-icon>
-              </a>
-              <div class="site-tags">
-                <el-tag v-if="site.ssl" type="success" size="small">SSL</el-tag>
-                <el-tag v-if="site.isLaravel" type="warning" size="small">Laravel</el-tag>
-              </div>
+              {{ site.domain }}
+              <el-icon class="link-icon"><Link /></el-icon>
+            </a>
+            <div class="site-tags">
+              <el-tag v-if="site.ssl" type="success" size="small">SSL</el-tag>
+              <el-tag v-if="site.isLaravel" type="warning" size="small">Laravel</el-tag>
             </div>
           </div>
-          <div v-else class="empty-hint">
-            <span>暂无站点</span>
-            <router-link to="/sites">添加站点</router-link>
+        </div>
+        <p v-else class="footer-empty">
+          暂无站点
+          <router-link to="/sites">添加站点</router-link>
+        </p>
+      </div>
+
+      <div class="footer-divider" aria-hidden="true"></div>
+
+      <div class="footer-col footer-path">
+        <div class="footer-head">
+          <h2 class="section-title">安装路径</h2>
+          <div class="section-actions">
+            <el-button size="small" @click="showLogViewer = true">
+              <el-icon><Document /></el-icon>
+              日志
+            </el-button>
+            <el-button size="small" @click="openBasePath">
+              <el-icon><FolderOpened /></el-icon>
+              打开目录
+            </el-button>
           </div>
         </div>
+        <code class="path-value">{{ basePath }}</code>
       </div>
-    </div>
+    </footer>
 
-    <!-- 系统信息 -->
-    <div class="card">
-      <div class="card-header">
-        <span class="card-title">
-          <el-icon><InfoFilled /></el-icon>
-          安装路径
-        </span>
-        <div class="card-actions">
-          <el-button size="small" @click="showLogViewer = true">
-            <el-icon><Document /></el-icon>
-            查看日志
-          </el-button>
-          <el-button size="small" @click="openBasePath">
-            <el-icon><FolderOpened /></el-icon>
-            打开目录
-          </el-button>
-        </div>
-      </div>
-      <div class="card-content">
-        <div class="path-display">
-          <span class="path-label">基础路径：</span>
-          <code class="path-value">{{ basePath }}</code>
-        </div>
-      </div>
-    </div>
-
-    <!-- 日志查看器 -->
     <LogViewer v-model="showLogViewer" />
   </div>
 </template>
@@ -303,11 +237,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onActivated } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Link, Promotion, Document } from '@element-plus/icons-vue'
+import { Link, Document } from '@element-plus/icons-vue'
 import { useServiceStore } from '@/stores/serviceStore'
 import LogViewer from '@/components/LogViewer.vue'
+import { APP_NAME, APP_TAGLINE } from '@/brand'
 
-// 定义组件名称以便 KeepAlive 正确缓存
 defineOptions({
   name: 'Dashboard'
 })
@@ -320,21 +254,38 @@ interface Service {
   icon: string
   running: boolean
   loading: boolean
-  version?: string  // 用于 PHP-CGI 显示版本
-  port?: number     // 用于 PHP-CGI 显示端口
+  version?: string
+  port?: number
 }
 
-// 基础服务列表配置
+interface RuntimeSummary {
+  id: string
+  label: string
+  icon: string
+  path: string
+  installed: boolean
+  summary: string
+}
+
+const extraRuntimes = ref({
+  go: [] as { version: string; isActive?: boolean }[],
+  python: [] as { version: string; isActive?: boolean }[],
+  rust: [] as { version: string; isActive?: boolean; label?: string }[],
+  java: [] as { version: string; isActive?: boolean }[],
+  dotnet: [] as { version: string; isActive?: boolean }[],
+  git: [] as { version: string }[],
+})
+
 const baseServiceConfigs = [
   { name: 'nginx', displayName: 'Nginx', icon: 'Connection' },
   { name: 'mysql', displayName: 'MySQL', icon: 'Coin' },
-  { name: 'redis', displayName: 'Redis', icon: 'Grid' }
+  { name: 'postgres', displayName: 'PostgreSQL', icon: 'DataBoard' },
+  { name: 'redis', displayName: 'Redis', icon: 'Grid' },
+  { name: 'mongodb', displayName: 'MongoDB', icon: 'Collection' },
 ]
 
-// 服务加载状态
 const serviceLoadingState = ref<Record<string, boolean>>({})
 
-// 从 store 计算基础服务列表
 const services = computed<Service[]>(() => {
   return baseServiceConfigs.map(config => ({
     ...config,
@@ -343,7 +294,6 @@ const services = computed<Service[]>(() => {
   }))
 })
 
-// 从 store 计算 PHP-CGI 服务列表
 const phpCgiServices = computed<Service[]>(() => {
   return store.serviceStatus.phpCgi.map(status => ({
     name: `php-cgi-${status.version}`,
@@ -356,15 +306,127 @@ const phpCgiServices = computed<Service[]>(() => {
   }))
 })
 
-// 从 store 获取数据
 const phpVersions = computed(() => store.phpVersions)
 const nodeVersions = computed(() => store.nodeVersions)
 const sites = computed(() => store.sites)
 const basePath = computed(() => store.basePath)
 
-const settingPhp = ref('')
-const settingNode = ref('')
 const showLogViewer = ref(false)
+
+function versionText(item: { version?: string; label?: string }): string {
+  const raw = (item.label || item.version || "").trim()
+  if (!raw || /^(no|none|unknown)$/i.test(raw)) return ""
+  return raw
+}
+
+function activeOrCount(list: { version: string; isActive?: boolean; label?: string }[], unit: string) {
+  if (!list.length) return '未安装'
+  const active = list.find(v => v.isActive)
+  const shown = versionText(active || list[0])
+  if (active && shown) return `当前 ${shown}`
+  if (list.length === 1 && shown) return `${unit} ${shown}`
+  return `${list.length} 个已安装`
+}
+
+const runtimes = computed<RuntimeSummary[]>(() => [
+  {
+    id: 'php',
+    label: 'PHP',
+    icon: 'Files',
+    path: '/php',
+    installed: phpVersions.value.length > 0,
+    summary: activeOrCount(phpVersions.value, 'PHP'),
+  },
+  {
+    id: 'node',
+    label: 'Node.js',
+    icon: 'Promotion',
+    path: '/nodejs',
+    installed: nodeVersions.value.length > 0,
+    summary: activeOrCount(nodeVersions.value, 'Node'),
+  },
+  {
+    id: 'go',
+    label: 'Go',
+    icon: 'Aim',
+    path: '/go',
+    installed: extraRuntimes.value.go.length > 0,
+    summary: activeOrCount(extraRuntimes.value.go, 'Go'),
+  },
+  {
+    id: 'python',
+    label: 'Python',
+    icon: 'Platform',
+    path: '/python',
+    installed: extraRuntimes.value.python.length > 0,
+    summary: activeOrCount(extraRuntimes.value.python, 'Python'),
+  },
+  {
+    id: 'rust',
+    label: 'Rust',
+    icon: 'Tools',
+    path: '/rust',
+    installed: extraRuntimes.value.rust.length > 0,
+    summary: activeOrCount(extraRuntimes.value.rust, 'Rust'),
+  },
+  {
+    id: 'java',
+    label: 'Java',
+    icon: 'Coffee',
+    path: '/java',
+    installed: extraRuntimes.value.java.length > 0,
+    summary: activeOrCount(extraRuntimes.value.java, 'JDK'),
+  },
+  {
+    id: 'dotnet',
+    label: '.NET',
+    icon: 'Cpu',
+    path: '/dotnet',
+    installed: extraRuntimes.value.dotnet.length > 0,
+    summary: activeOrCount(extraRuntimes.value.dotnet, '.NET'),
+  },
+  {
+    id: 'git',
+    label: 'Git',
+    icon: 'Share',
+    path: '/git',
+    installed: extraRuntimes.value.git.length > 0,
+    summary: extraRuntimes.value.git[0]?.version
+      ? `Git ${extraRuntimes.value.git[0].version}`
+      : '未安装',
+  },
+])
+
+const installedRuntimeCount = computed(() => runtimes.value.filter(r => r.installed).length)
+
+const loadExtraRuntimes = async () => {
+  try {
+    const [go, python, rust, java, dotnet, gitVersions, gitSystem] = await Promise.all([
+      (window.electronAPI?.go.getVersions() ?? Promise.resolve([])).catch(() => []),
+      (window.electronAPI?.python.getVersions() ?? Promise.resolve([])).catch(() => []),
+      (window.electronAPI?.rust.getVersions() ?? Promise.resolve([])).catch(() => []),
+      (window.electronAPI?.java.getVersions() ?? Promise.resolve([])).catch(() => []),
+      (window.electronAPI?.dotnet.getVersions() ?? Promise.resolve([])).catch(() => []),
+      (window.electronAPI?.git.getVersions() ?? Promise.resolve([])).catch(() => []),
+      (window.electronAPI?.git.checkSystem() ?? Promise.resolve(null)).catch(() => null),
+    ])
+    extraRuntimes.value.go = go || []
+    extraRuntimes.value.python = python || []
+    extraRuntimes.value.rust = rust || []
+    extraRuntimes.value.java = java || []
+    extraRuntimes.value.dotnet = dotnet || []
+    const managedGit = gitVersions || []
+    if (managedGit.length > 0) {
+      extraRuntimes.value.git = managedGit
+    } else if (gitSystem?.installed && gitSystem.version) {
+      extraRuntimes.value.git = [{ version: gitSystem.version }]
+    } else {
+      extraRuntimes.value.git = []
+    }
+  } catch (error) {
+    console.error('加载运行时概览失败:', error)
+  }
+}
 
 const startService = async (service: Service) => {
   serviceLoadingState.value[service.name] = true
@@ -381,10 +443,14 @@ const startService = async (service: Service) => {
       }
     } else if (service.name === 'redis') {
       result = await window.electronAPI?.redis.start()
+    } else if (service.name === 'postgres') {
+      result = await window.electronAPI?.postgres.start()
+    } else if (service.name === 'mongodb') {
+      result = await window.electronAPI?.mongodb.start()
     }
 
     if (result?.success) {
-      store.updateServiceStatus(service.name as 'nginx' | 'mysql' | 'redis', true)
+      store.updateServiceStatus(service.name as 'nginx' | 'mysql' | 'redis' | 'postgres' | 'mongodb', true)
       ElMessage.success(result.message)
     } else {
       ElMessage.error(result?.message || '启动失败')
@@ -427,10 +493,14 @@ const stopService = async (service: Service) => {
       }
     } else if (service.name === 'redis') {
       result = await window.electronAPI?.redis.stop()
+    } else if (service.name === 'postgres') {
+      result = await window.electronAPI?.postgres.stop()
+    } else if (service.name === 'mongodb') {
+      result = await window.electronAPI?.mongodb.stop()
     }
 
     if (result?.success) {
-      store.updateServiceStatus(service.name as 'nginx' | 'mysql' | 'redis', false)
+      store.updateServiceStatus(service.name as 'nginx' | 'mysql' | 'redis' | 'postgres' | 'mongodb', false)
       ElMessage.success(result.message)
     } else {
       ElMessage.error(result?.message || '停止失败')
@@ -473,6 +543,10 @@ const restartService = async (service: Service) => {
       }
     } else if (service.name === 'redis') {
       result = await window.electronAPI?.redis.restart()
+    } else if (service.name === 'postgres') {
+      result = await window.electronAPI?.postgres.restart()
+    } else if (service.name === 'mongodb') {
+      result = await window.electronAPI?.mongodb.restart()
     }
 
     if (result?.success) {
@@ -491,7 +565,6 @@ const restartPhpCgi = async (service: Service) => {
   const key = `php-cgi-${service.version}`
   serviceLoadingState.value[key] = true
   try {
-    // PHP-CGI 重启：先停止再启动
     await window.electronAPI?.service.stopPhpCgiVersion(service.version!)
     await new Promise(resolve => setTimeout(resolve, 500))
     const result = await window.electronAPI?.service.startPhpCgiVersion(service.version!)
@@ -508,13 +581,11 @@ const restartPhpCgi = async (service: Service) => {
   }
 }
 
-// 启动全部 PHP-CGI
 const startAllPhpCgi = async () => {
   try {
     const result = await window.electronAPI?.service.startAllPhpCgi()
     if (result?.success) {
       ElMessage.success('全部 PHP-CGI 已启动')
-      // 更新所有 PHP-CGI 状态为运行中
       store.serviceStatus.phpCgi.forEach(p => p.running = true)
     } else {
       ElMessage.error(result?.message || '启动失败')
@@ -524,13 +595,11 @@ const startAllPhpCgi = async () => {
   }
 }
 
-// 停止全部 PHP-CGI
 const stopAllPhpCgi = async () => {
   try {
     const result = await window.electronAPI?.service.stopAllPhpCgi()
     if (result?.success) {
       ElMessage.success('全部 PHP-CGI 已停止')
-      // 更新所有 PHP-CGI 状态为已停止
       store.serviceStatus.phpCgi.forEach(p => p.running = false)
     } else {
       ElMessage.error(result?.message || '停止失败')
@@ -546,157 +615,244 @@ const openBasePath = async () => {
   }
 }
 
-// 在默认浏览器中打开站点
 const openSite = (site: { domain: string, ssl: boolean }) => {
   const protocol = site.ssl ? 'https' : 'http'
   window.electronAPI?.openExternal(`${protocol}://${site.domain}`)
 }
 
-const setActivePhp = async (version: string) => {
-  settingPhp.value = version
-  try {
-    const result = await window.electronAPI?.php.setActive(version)
-    if (result?.success) {
-      ElMessage.success(result.message)
-      // 刷新全局 PHP 版本列表
-      await store.refreshPhpVersions()
-    } else {
-      ElMessage.error(result?.message || '设置失败')
-    }
-  } catch (error: any) {
-    ElMessage.error(error.message)
-  } finally {
-    settingPhp.value = ''
-  }
-}
-
-const setActiveNode = async (version: string) => {
-  settingNode.value = version
-  try {
-    const result = await window.electronAPI?.node.setActive(version)
-    if (result?.success) {
-      ElMessage.success(result.message)
-      // 刷新全局 Node.js 版本列表
-      await store.refreshNodeVersions()
-    } else {
-      ElMessage.error(result?.message || '设置失败')
-    }
-  } catch (error: any) {
-    ElMessage.error(error.message)
-  } finally {
-    settingNode.value = ''
-  }
-}
-
 onMounted(async () => {
-  // 首次加载：如果没有数据则全量刷新
   if (store.phpVersions.length === 0 && store.nodeVersions.length === 0) {
     await store.refreshAll()
   }
+  await loadExtraRuntimes()
 })
 
-// 从缓存激活时静默刷新状态（不会闪烁因为已有数据）
 onActivated(async () => {
   await store.refreshServiceStatus()
+  await loadExtraRuntimes()
 })
 </script>
 
 <style lang="scss" scoped>
+.page-container {
+  padding-bottom: 48px;
+}
+
+.hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 24px;
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.hero-kicker {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent-color);
+  margin-bottom: 6px;
+}
+
+.hero-title {
+  font-size: 26px;
+  margin-bottom: 6px;
+}
+
+.stat-strip {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.stat {
+  min-width: 92px;
+  padding: 10px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.stat-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.stack-section {
+  margin-bottom: 22px;
+}
+
+.dash-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1px minmax(280px, 0.72fr);
+  gap: 0;
+  margin-top: 4px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.footer-col {
+  min-width: 0;
+  padding: 14px 16px 16px;
+}
+
+.footer-path {
+  background: var(--bg-input);
+}
+
+.footer-divider {
+  background: var(--border-color);
+}
+
+.footer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.footer-empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+
+  a {
+    color: var(--accent-color);
+    margin-left: 8px;
+    text-decoration: none;
+    &:hover { text-decoration: underline; }
+  }
+}
+
+.section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.section-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.section-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.section-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.runtime-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.runtime-card {
+  display: block;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  text-decoration: none;
+  color: inherit;
+  min-width: 0;
+  transition: background var(--transition-fast);
+
+  &:hover { background: var(--bg-hover); }
+  &.ready {
+    background: var(--select-fill);
+  }
+}
+
+.runtime-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.runtime-meta {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 .status-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 12px;
-  margin-bottom: 20px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .status-card {
   background: var(--bg-card);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   border: 1px solid var(--border-color);
-  padding: 18px;
-  transition: border-color var(--transition-normal);
+  padding: 14px;
+  min-width: 0;
+  transition: background var(--transition-fast);
 
-  &:hover {
-    border-color: var(--accent-border);
-  }
+  &:hover { background: var(--bg-hover); }
 
   &.running {
-    border-color: var(--success-border);
-    background: var(--success-bg);
+    background: var(--select-fill);
   }
 
   .status-header {
     display: flex;
     align-items: center;
-    gap: 14px;
-    margin-bottom: 16px;
-  }
-
-  .service-icon {
-    width: 44px;
-    height: 44px;
-    border-radius: var(--radius-md);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 22px;
-    background: var(--accent-bg);
-    border: 1px solid var(--accent-border);
-    color: var(--accent-color);
-  }
-
-  .service-info {
-    .service-name {
-      font-size: 15px;
-      font-weight: 600;
-      margin-bottom: 2px;
-    }
+    gap: 12px;
+    margin-bottom: 12px;
   }
 
   .status-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 6px;
   }
 }
 
-.info-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
-  gap: 12px;
-  margin-bottom: 20px;
-
-  &.single {
-    grid-template-columns: 1fr;
-  }
-}
-
-.version-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.mini-version-card {
+.service-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  background: var(--bg-card);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-color);
+  justify-content: center;
+  font-size: 20px;
+  background: var(--bg-input);
+  border: none;
+  color: var(--text-secondary);
+}
 
-  &.active {
-    border-color: var(--accent-border);
-    background: var(--accent-bg);
+.service-info {
+  .service-name {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 2px;
   }
+}
 
-  .version-number { font-weight: 500; }
-
-  .version-actions {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
+.service-name {
+  font-size: 15px;
+  font-weight: 600;
 }
 
 .site-list {
@@ -709,10 +865,10 @@ onActivated(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
-  background: var(--bg-card);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-color);
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-color);
+
+  &:last-child { border-bottom: none; padding-bottom: 0; }
 
   .site-domain-link {
     display: flex;
@@ -741,20 +897,6 @@ onActivated(async () => {
   }
 }
 
-.empty-hint {
-  padding: 20px;
-  text-align: center;
-  color: var(--text-muted);
-
-  a {
-    color: var(--accent-color);
-    margin-left: 8px;
-    text-decoration: none;
-
-    &:hover { text-decoration: underline; }
-  }
-}
-
 .view-more {
   display: flex;
   align-items: center;
@@ -766,52 +908,26 @@ onActivated(async () => {
   &:hover { text-decoration: underline; }
 }
 
-.path-display {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-
-  .path-label { color: var(--text-secondary); }
-
-  .path-value {
-    font-family: 'Fira Code', monospace;
-    color: var(--accent-color);
-  }
+.path-value {
+  display: block;
+  font-family: 'Fira Code', monospace;
+  font-size: 12px;
+  color: var(--accent-color);
+  word-break: break-all;
+  line-height: 1.5;
 }
 
-.no-php-hint {
-  font-size: 13px;
-  color: var(--text-muted);
-  font-style: italic;
+@media (max-width: 1180px) {
+  .runtime-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dash-footer { grid-template-columns: 1fr; }
+  .footer-divider { display: none; }
 }
 
-.php-cgi-section {
-  margin-bottom: 20px;
-
-  .section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 12px;
-  }
-
-  .section-title {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 15px;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .section-actions {
-    display: flex;
-    gap: 6px;
-  }
+@media (max-width: 820px) {
+  .hero { flex-direction: column; align-items: stretch; }
+  .runtime-grid,
+  .status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .php-cgi-card {
@@ -822,15 +938,4 @@ onActivated(async () => {
     margin-bottom: 2px;
   }
 }
-
-.php-cgi-empty {
-  margin-bottom: 20px;
-
-  a {
-    color: var(--accent-color);
-    text-decoration: none;
-    &:hover { text-decoration: underline; }
-  }
-}
 </style>
-

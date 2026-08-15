@@ -29,8 +29,13 @@ import { ServiceManager } from "./services/ServiceManager";
 import { HostsManager } from "./services/HostsManager";
 import { GitManager } from "./services/GitManager";
 import { PythonManager } from "./services/PythonManager";
+import { JavaManager } from "./services/JavaManager";
+import { DotnetManager } from "./services/DotnetManager";
+import { PostgresManager } from "./services/PostgresManager";
+import { MongoManager } from "./services/MongoManager";
 import { LogManager } from "./services/LogManager";
 import { ConfigStore } from "./services/ConfigStore";
+import { APP_NAME } from "../src/brand";
 
 // 获取图标路径
 function getIconPath(filename: string): string {
@@ -60,45 +65,28 @@ function getIconPath(filename: string): string {
   return join(__dirname, "../public/icon.ico");
 }
 
-// 获取托盘图标路径
-function getTrayIconPath(): string {
-  return getIconPath("icon.ico");
+function loadAppIcon(size?: number): Electron.NativeImage {
+  const png = getIconPath("icon.png");
+  const ico = getIconPath("icon.ico");
+  for (const iconPath of [png, ico]) {
+    try {
+      const icon = nativeImage.createFromPath(iconPath);
+      if (!icon.isEmpty()) {
+        return size ? icon.resize({ width: size, height: size }) : icon;
+      }
+    } catch (e) {
+      console.error("Failed to load app icon:", iconPath, e);
+    }
+  }
+  return nativeImage.createEmpty();
 }
 
-// 获取窗口图标路径
-function getWindowIconPath(): string {
-  return getIconPath("icon.ico");
-}
-
-// 创建托盘图标
 function createTrayIcon(): Electron.NativeImage {
-  const iconPath = getTrayIconPath();
-  console.log("Tray icon path:", iconPath);
-  try {
-    const icon = nativeImage.createFromPath(iconPath);
-    if (!icon.isEmpty()) {
-      // 托盘图标需要较小尺寸
-      return icon.resize({ width: 16, height: 16 });
-    }
-  } catch (e) {
-    console.error("Failed to load tray icon:", e);
-  }
-  return nativeImage.createEmpty();
+  return loadAppIcon(16);
 }
 
-// 创建窗口图标
 function createWindowIcon(): Electron.NativeImage {
-  const iconPath = getWindowIconPath();
-  console.log("Window icon path:", iconPath);
-  try {
-    const icon = nativeImage.createFromPath(iconPath);
-    if (!icon.isEmpty()) {
-      return icon;
-    }
-  } catch (e) {
-    console.error("Failed to load window icon:", e);
-  }
-  return nativeImage.createEmpty();
+  return loadAppIcon(256);
 }
 
 let mainWindow: BrowserWindow | null = null;
@@ -135,6 +123,10 @@ const serviceManager = new ServiceManager(configStore);
 const hostsManager = new HostsManager();
 const gitManager = new GitManager(configStore);
 const pythonManager = new PythonManager(configStore);
+const javaManager = new JavaManager(configStore);
+const dotnetManager = new DotnetManager(configStore);
+const postgresManager = new PostgresManager(configStore);
+const mongoManager = new MongoManager(configStore);
 const logManager = new LogManager(configStore);
 
 function createWindow() {
@@ -145,6 +137,7 @@ function createWindow() {
     height: 900,
     minWidth: 1200,
     minHeight: 700,
+    title: APP_NAME,
     webPreferences: {
       preload: join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -192,7 +185,7 @@ function createTray() {
   const trayIcon = createTrayIcon();
 
   tray = new Tray(trayIcon);
-  tray.setToolTip("PHPer 开发环境管理器");
+  tray.setToolTip(APP_NAME);
 
   // 创建托盘菜单
   const contextMenu = Menu.buildFromTemplate([
@@ -250,7 +243,6 @@ function createTray() {
 }
 
 // 设置应用名称和 Windows AppUserModelId（用于任务栏图标分组和进程名称显示）
-const APP_NAME = "PHPer开发环境管理器";
 const APP_ID = "com.phper.devmanager";
 
 app.setName(APP_NAME);
@@ -279,6 +271,16 @@ if (!gotTheLock) {
   app.whenReady().then(async () => {
     createTray();
     createWindow();
+
+    if (process.env.DEVSTACK_CAPTURE === "1" && mainWindow) {
+      mainWindow.once("ready-to-show", () => {
+        void import("./captureDocs").then(({ captureDocScreenshots }) => {
+          if (mainWindow) {
+            void captureDocScreenshots(mainWindow);
+          }
+        });
+      });
+    }
 
     // 根据配置自动启动服务
     try {
@@ -332,7 +334,7 @@ ipcMain.handle("dialog:selectDirectory", async () => {
   const { dialog } = await import("electron");
   const result = await dialog.showOpenDialog(mainWindow!, {
     properties: ["openDirectory"],
-    title: "选择目录",
+    title: `选择目录 — ${APP_NAME}`,
   });
   return result.canceled ? null : result.filePaths[0];
 });
@@ -480,7 +482,7 @@ ipcMain.handle("nginx:disableSite", (_, name: string) =>
 ipcMain.handle("nginx:generateLaravelConfig", (_, site: any) =>
   nginxManager.generateLaravelConfig(site),
 );
-ipcMain.handle("nginx:requestSSL", (_, domain: string, email: string) =>
+ipcMain.handle("nginx:requestSSL", (_, domain: string, email?: string) =>
   nginxManager.requestSSLCertificate(domain, email),
 );
 
@@ -560,6 +562,9 @@ ipcMain.handle("rust:getAvailableVersions", () =>
   rustManager.getAvailableVersions(),
 );
 ipcMain.handle("rust:install", (_, name: string) => rustManager.install(name));
+ipcMain.handle("rust:installRustup", (_, toolchain?: string) =>
+  rustManager.installRustup(toolchain),
+);
 ipcMain.handle("rust:uninstall", (_, name: string) =>
   rustManager.uninstall(name),
 );
@@ -653,6 +658,64 @@ ipcMain.handle(
   (_, version: string, packageName: string) =>
     pythonManager.installPackage(version, packageName),
 );
+
+ipcMain.handle("java:getVersions", () => javaManager.getInstalledVersions());
+ipcMain.handle("java:getAvailableVersions", () => javaManager.getAvailableVersions());
+ipcMain.handle("java:install", (_, version: string, downloadUrl: string) =>
+  javaManager.install(version, downloadUrl),
+);
+ipcMain.handle("java:uninstall", (_, version: string) => javaManager.uninstall(version));
+ipcMain.handle("java:setActive", (_, version: string) => javaManager.setActive(version));
+ipcMain.handle("java:setActiveSystem", (_, path: string) =>
+  javaManager.setActiveSystem(path),
+);
+ipcMain.handle("java:uninstallSystem", (_, path: string) =>
+  javaManager.uninstallSystem(path),
+);
+
+ipcMain.handle("dotnet:getVersions", () => dotnetManager.getInstalledVersions());
+ipcMain.handle("dotnet:getAvailableVersions", () =>
+  dotnetManager.getAvailableVersions(),
+);
+ipcMain.handle("dotnet:install", (_, version: string, downloadUrl: string) =>
+  dotnetManager.install(version, downloadUrl),
+);
+ipcMain.handle("dotnet:uninstall", (_, version: string) =>
+  dotnetManager.uninstall(version),
+);
+ipcMain.handle("dotnet:setActive", (_, version: string) =>
+  dotnetManager.setActive(version),
+);
+ipcMain.handle("dotnet:setActiveSystem", (_, path: string) =>
+  dotnetManager.setActiveSystem(path),
+);
+ipcMain.handle("dotnet:uninstallSystem", (_, path: string) =>
+  dotnetManager.uninstallSystem(path),
+);
+
+ipcMain.handle("postgres:getVersions", () => postgresManager.getInstalledVersions());
+ipcMain.handle("postgres:getAvailableVersions", () =>
+  postgresManager.getAvailableVersions(),
+);
+ipcMain.handle("postgres:install", (_, version: string) =>
+  postgresManager.install(version),
+);
+ipcMain.handle("postgres:uninstall", () => postgresManager.uninstall());
+ipcMain.handle("postgres:start", () => postgresManager.start());
+ipcMain.handle("postgres:stop", () => postgresManager.stop());
+ipcMain.handle("postgres:restart", () => postgresManager.restart());
+ipcMain.handle("postgres:getStatus", () => postgresManager.getStatus());
+
+ipcMain.handle("mongodb:getVersions", () => mongoManager.getInstalledVersions());
+ipcMain.handle("mongodb:getAvailableVersions", () =>
+  mongoManager.getAvailableVersions(),
+);
+ipcMain.handle("mongodb:install", (_, version: string) => mongoManager.install(version));
+ipcMain.handle("mongodb:uninstall", () => mongoManager.uninstall());
+ipcMain.handle("mongodb:start", () => mongoManager.start());
+ipcMain.handle("mongodb:stop", () => mongoManager.stop());
+ipcMain.handle("mongodb:restart", () => mongoManager.restart());
+ipcMain.handle("mongodb:getStatus", () => mongoManager.getStatus());
 
 // ==================== 配置管理 ====================
 // 配置管理：渲染端按动态字符串 key 读写，这里放宽到 any 以匹配 configStore 的泛型约束。

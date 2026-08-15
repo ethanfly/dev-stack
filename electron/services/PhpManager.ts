@@ -16,15 +16,9 @@ import http from "http";
 import { createWriteStream } from "fs";
 import { sendDownloadProgress } from "../main";
 import { PathManager } from "./PathManager";
+import { catalogPhp } from "./catalog";
 
 const execAsync = promisify(exec);
-
-// PHP Windows 版本的官方下载源。
-// 注意：windows.php.net/downloads/releases/ 现已 302 重定向到
-// downloads.php.net/~windows/releases/，且其上对已归档的旧版本会再
-// 跳转到失效地址导致 404。这里直接用最终可用源 downloads.php.net，
-// 避免重定向丢版本/旧版本 404 的问题（~windows 是该站合法路径段，非错误）。
-const PHP_WIN_RELEASES_BASE = "https://downloads.php.net/~windows/releases/";
 
 interface PhpVersion {
   version: string;
@@ -148,276 +142,19 @@ export class PhpManager {
   }
 
   /**
-   * 从 windows.php.net 自动获取可用的 PHP 版本列表
+   * 从 downloads.php.net 官方 releases.json 获取可用 PHP 版本
    */
   async getAvailableVersions(): Promise<AvailablePhpVersion[]> {
-    let versions: AvailablePhpVersion[] = [];
-
-    try {
-      // 尝试从 windows.php.net/downloads/releases/ 获取版本列表
-      versions = await this.fetchPhpVersionsFromWeb();
-    } catch (error) {
-      console.error("获取 PHP 版本列表失败:", error);
-    }
-
-    // 如果网络获取失败或为空，使用备用列表
-    if (versions.length === 0) {
-      console.log("使用备用版本列表");
-      versions = this.getFallbackVersions();
-    }
-
-    // 过滤掉已安装的版本
-    const installed = await this.getInstalledVersions();
-    const installedVersions = installed.map((v) => v.version);
-
-    return versions.filter((v) => !installedVersions.includes(v.version));
-  }
-
-  /**
-   * 从网页获取 PHP 版本列表
-   */
-  private async fetchPhpVersionsFromWeb(): Promise<AvailablePhpVersion[]> {
-    return new Promise((resolve, reject) => {
-      // 直接请求最终可用源 downloads.php.net（200 直连，无需跟随重定向）。
-      const url = PHP_WIN_RELEASES_BASE;
-
-      https
-        .get(
-          url,
-          {
-            headers: {
-              "User-Agent":
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            },
-          },
-          (response) => {
-            // 兼容 302/301：windows.php.net 旧源会跳到 downloads.php.net，
-            // 虽然已直连最终源，这里仍保留跟随逻辑以防源站再次调整。
-            if (
-              response.statusCode === 301 ||
-              response.statusCode === 302
-            ) {
-              const redirectUrl = response.headers.location;
-              if (redirectUrl) {
-                const next = redirectUrl.startsWith("http")
-                  ? redirectUrl
-                  : new URL(redirectUrl, url).href;
-                this.fetchPhpVersionsFromUrl(next)
-                  .then(resolve)
-                  .catch(reject);
-                return;
-              }
-            }
-
-            if (response.statusCode !== 200) {
-              reject(new Error(`HTTP ${response.statusCode}`));
-              return;
-            }
-
-            let html = "";
-            response.on("data", (chunk) => (html += chunk));
-            response.on("end", () => {
-              try {
-                const versions = this.parsePhpVersionsFromHtml(html);
-                resolve(versions);
-              } catch (e) {
-                reject(e);
-              }
-            });
-          }
-        )
-        .on("error", reject)
-        .setTimeout(10000, () => {
-          reject(new Error("请求超时"));
-        });
-    });
-  }
-
-  // 按 url 抓取版本目录 HTML 并解析（供重定向后复用）
-  private async fetchPhpVersionsFromUrl(
-    url: string
-  ): Promise<AvailablePhpVersion[]> {
-    return new Promise((resolve, reject) => {
-      https
-        .get(
-          url,
-          {
-            headers: {
-              "User-Agent":
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            },
-          },
-          (response) => {
-            if (response.statusCode !== 200) {
-              reject(new Error(`HTTP ${response.statusCode}`));
-              return;
-            }
-            let html = "";
-            response.on("data", (chunk) => (html += chunk));
-            response.on("end", () => {
-              try {
-                resolve(this.parsePhpVersionsFromHtml(html));
-              } catch (e) {
-                reject(e);
-              }
-            });
-          }
-        )
-        .on("error", reject)
-        .setTimeout(10000, () => {
-          reject(new Error("请求超时"));
-        });
-    });
-  }
-
-  /**
-   * 解析 HTML 获取 PHP 版本信息
-   */
-  private parsePhpVersionsFromHtml(html: string): AvailablePhpVersion[] {
-    const versions: AvailablePhpVersion[] = [];
-    const seenVersions = new Set<string>();
-
-    // 多种正则模式匹配不同格式
-    const patterns = [
-      // 标准格式: php-8.4.3-nts-Win32-vs17-x64.zip
-      /php-(\d+\.\d+\.\d+)-nts-Win32-vs(\d+)-x64\.zip/g,
-      // TS格式: php-8.4.3-Win32-vs17-x64.zip
-      /php-(\d+\.\d+\.\d+)-Win32-vs(\d+)-x64\.zip/g,
-    ];
-
-    // 匹配 NTS 版本
-    let match;
-    const ntsRegex = /php-(\d+\.\d+\.\d+)-nts-Win32-vs(\d+)-x64\.zip/g;
-    while ((match = ntsRegex.exec(html)) !== null) {
-      const version = match[1];
-      const vsVersion = match[2];
-      const versionKey = `${version}-nts`;
-
-      if (!seenVersions.has(versionKey)) {
-        seenVersions.add(versionKey);
-        versions.push({
-          version: version,
-          downloadUrl: `${PHP_WIN_RELEASES_BASE}php-${version}-nts-Win32-vs${vsVersion}-x64.zip`,
-          type: "nts",
-          arch: "x64",
-        });
-      }
-    }
-
-    // 匹配 TS 版本 (不含 nts 的)
-    const tsRegex = /php-(\d+\.\d+\.\d+)-Win32-vs(\d+)-x64\.zip/g;
-    while ((match = tsRegex.exec(html)) !== null) {
-      const fullMatch = match[0];
-      // 跳过 nts 版本（已经处理过）
-      if (fullMatch.includes("-nts-")) continue;
-
-      const version = match[1];
-      const vsVersion = match[2];
-      const versionKey = `${version}-ts`;
-
-      if (!seenVersions.has(versionKey)) {
-        seenVersions.add(versionKey);
-        versions.push({
-          version: `${version}-ts`,
-          downloadUrl: `${PHP_WIN_RELEASES_BASE}php-${version}-Win32-vs${vsVersion}-x64.zip`,
-          type: "ts",
-          arch: "x64",
-        });
-      }
-    }
-
-    // 按版本号排序（降序）
-    versions.sort((a, b) => {
-      const vA = a.version.replace("-ts", "");
-      const vB = b.version.replace("-ts", "");
-      return vB.localeCompare(vA, undefined, { numeric: true });
-    });
-
-    console.log(`从 windows.php.net 获取到 ${versions.length} 个 PHP 版本`);
+    const versions = await catalogPhp();
+    console.log(
+      `从 downloads.php.net 获取到 ${versions.length} 个 PHP 版本`,
+    );
     if (versions.length > 0) {
       console.log("版本列表:", versions.map((v) => v.version).join(", "));
     }
-    return versions;
-  }
-
-  /**
-   * 备用版本列表（当网络请求失败时使用）
-   * 基于 downloads.php.net/~windows/releases/ (2026-07-23)
-   * 注意：旧版（如 8.4.3/8.3.15/8.2.27/8.1.31）已从源站移除会 404，
-   * 这里只保留当前仍可下载的最新版本。
-   */
-  private getFallbackVersions(): AvailablePhpVersion[] {
-    return [
-      // PHP 8.5 (VS17)
-      {
-        version: "8.5.8",
-        downloadUrl: `${PHP_WIN_RELEASES_BASE}php-8.5.8-nts-Win32-vs17-x64.zip`,
-        type: "nts",
-        arch: "x64",
-      },
-      {
-        version: "8.5.8-ts",
-        downloadUrl: `${PHP_WIN_RELEASES_BASE}php-8.5.8-Win32-vs17-x64.zip`,
-        type: "ts",
-        arch: "x64",
-      },
-
-      // PHP 8.4 (VS17) - 最新稳定版
-      {
-        version: "8.4.23",
-        downloadUrl: `${PHP_WIN_RELEASES_BASE}php-8.4.23-nts-Win32-vs17-x64.zip`,
-        type: "nts",
-        arch: "x64",
-      },
-      {
-        version: "8.4.23-ts",
-        downloadUrl: `${PHP_WIN_RELEASES_BASE}php-8.4.23-Win32-vs17-x64.zip`,
-        type: "ts",
-        arch: "x64",
-      },
-
-      // PHP 8.3 (VS16)
-      {
-        version: "8.3.32",
-        downloadUrl: `${PHP_WIN_RELEASES_BASE}php-8.3.32-nts-Win32-vs16-x64.zip`,
-        type: "nts",
-        arch: "x64",
-      },
-      {
-        version: "8.3.32-ts",
-        downloadUrl: `${PHP_WIN_RELEASES_BASE}php-8.3.32-Win32-vs16-x64.zip`,
-        type: "ts",
-        arch: "x64",
-      },
-
-      // PHP 8.2 (VS16)
-      {
-        version: "8.2.32",
-        downloadUrl: `${PHP_WIN_RELEASES_BASE}php-8.2.32-nts-Win32-vs16-x64.zip`,
-        type: "nts",
-        arch: "x64",
-      },
-      {
-        version: "8.2.32-ts",
-        downloadUrl: `${PHP_WIN_RELEASES_BASE}php-8.2.32-Win32-vs16-x64.zip`,
-        type: "ts",
-        arch: "x64",
-      },
-
-      // PHP 8.1 (VS16)
-      {
-        version: "8.1.34",
-        downloadUrl: `${PHP_WIN_RELEASES_BASE}php-8.1.34-nts-Win32-vs16-x64.zip`,
-        type: "nts",
-        arch: "x64",
-      },
-      {
-        version: "8.1.34-ts",
-        downloadUrl: `${PHP_WIN_RELEASES_BASE}php-8.1.34-Win32-vs16-x64.zip`,
-        type: "ts",
-        arch: "x64",
-      },
-    ];
+    const installed = await this.getInstalledVersions();
+    const installedVersions = installed.map((v) => v.version);
+    return versions.filter((v) => !installedVersions.includes(v.version));
   }
 
   /**
@@ -468,6 +205,10 @@ export class PhpManager {
 
       // 添加到配置
       this.configStore.addPhpVersion(version);
+
+      if (!this.configStore.get("activePhpVersion")) {
+        await this.setActive(version);
+      }
 
       return { success: true, message: `PHP ${version} 安装成功` };
     } catch (error: any) {
@@ -536,6 +277,7 @@ export class PhpManager {
 
       // 更新配置
       this.configStore.set("activePhpVersion", version);
+      this.configStore.set("activePhpPath", "");
 
       return {
         success: true,
@@ -2384,7 +2126,7 @@ export class PhpManager {
         },
         (response) => {
           // 处理重定向
-          if (response.statusCode === 301 || response.statusCode === 302) {
+          if (response.statusCode === 301 || response.statusCode === 302 || response.statusCode === 303 || response.statusCode === 307 || response.statusCode === 308) {
             const redirectUrl = response.headers.location;
             if (redirectUrl) {
               file.close();

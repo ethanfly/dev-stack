@@ -478,15 +478,15 @@ onUnmounted(() => {
   }
   
   .service-icon {
-    width: 48px;
-    height: 48px;
+    width: 44px;
+    height: 44px;
     border-radius: var(--radius-md);
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--accent-bg);
-    border: 1px solid var(--accent-border);
-    color: var(--accent-color);
+    background: var(--bg-input);
+    border: none;
+    color: var(--text-secondary);
     font-size: 22px;
   }
   
@@ -533,13 +533,11 @@ onUnmounted(() => {
   transition: all 0.2s;
   
   &:hover {
-    border-color: var(--accent-light);
     background: var(--bg-hover);
   }
   
   &.selected {
-    border-color: var(--accent-color);
-    background: rgba(124, 58, 237, 0.05);
+    background: var(--select-fill);
   }
   
   .version-select-info {

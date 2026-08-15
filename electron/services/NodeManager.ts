@@ -9,6 +9,7 @@ import { createWriteStream } from 'fs'
 import unzipper from 'unzipper'
 import { sendDownloadProgress } from '../main'
 import { PathManager } from './PathManager'
+import { catalogNode } from './catalog'
 
 const execAsync = promisify(exec)
 
@@ -169,7 +170,7 @@ export class NodeManager {
     }
 
     try {
-      const versions = await this.fetchVersionsFromNodejs()
+      const versions = await catalogNode()
       if (versions.length > 0) {
         this.versionsCache = versions
         this.cacheTime = Date.now()
@@ -179,70 +180,7 @@ export class NodeManager {
       console.error('获取 Node.js 版本列表失败:', error)
     }
 
-    // 返回硬编码的版本列表作为后备
     return this.getFallbackVersions()
-  }
-
-  /**
-   * 从 Node.js 官网获取版本列表
-   */
-  private async fetchVersionsFromNodejs(): Promise<AvailableNodeVersion[]> {
-    return new Promise((resolve, reject) => {
-      const url = 'https://nodejs.org/dist/index.json'
-
-      https.get(url, {
-        headers: {
-          'User-Agent': 'PHPer-Dev-Manager/1.0'
-        },
-        timeout: 30000
-      }, (res) => {
-        if (res.statusCode === 301 || res.statusCode === 302) {
-          const redirectUrl = res.headers.location
-          if (redirectUrl) {
-            https.get(redirectUrl, (redirectRes) => {
-              this.handleVersionResponse(redirectRes, resolve, reject)
-            }).on('error', reject)
-            return
-          }
-        }
-        this.handleVersionResponse(res, resolve, reject)
-      }).on('error', reject)
-        .on('timeout', () => reject(new Error('请求超时')))
-    })
-  }
-
-  private handleVersionResponse(
-    res: http.IncomingMessage,
-    resolve: (value: any) => void,
-    reject: (err: Error) => void,
-  ) {
-    let data = ''
-    res.on('data', chunk => data += chunk)
-    res.on('end', () => {
-      try {
-        const versions = JSON.parse(data)
-        const availableVersions: AvailableNodeVersion[] = []
-
-        for (const v of versions) {
-          // 只获取有 Windows 64位版本的
-          if (v.files && v.files.includes('win-x64-zip')) {
-            availableVersions.push({
-              version: v.version,
-              date: v.date,
-              lts: v.lts,
-              security: v.security,
-              downloadUrl: `https://nodejs.org/dist/${v.version}/node-${v.version}-win-x64.zip`
-            })
-          }
-        }
-
-        // 只返回前 30 个版本
-        resolve(availableVersions.slice(0, 30))
-      } catch (e) {
-        reject(e instanceof Error ? e : new Error(String(e)))
-      }
-    })
-    res.on('error', reject)
   }
 
   /**
@@ -394,7 +332,14 @@ export class NodeManager {
       } catch {}
 
       const replacePrefix = this.configStore.getNodePath()
-      const result = await this.pathManager.add([nodeDir], replacePrefix)
+      const npmGlobal = join(process.env.APPDATA || '', 'npm')
+      if (npmGlobal && !existsSync(npmGlobal)) {
+        mkdirSync(npmGlobal, { recursive: true })
+      }
+      const result = await this.pathManager.add(
+        PathManager.nonempty([nodeDir, npmGlobal]),
+        replacePrefix,
+      )
       if (!result.success) {
         return { success: false, message: `设置环境变量失败: ${result.message}` }
       }
@@ -491,7 +436,7 @@ export class NodeManager {
         timeout: 600000 // 10 分钟超时
       }, (response) => {
         // 处理重定向
-        if (response.statusCode === 301 || response.statusCode === 302) {
+        if (response.statusCode === 301 || response.statusCode === 302 || response.statusCode === 303 || response.statusCode === 307 || response.statusCode === 308) {
           const redirectUrl = response.headers.location
           if (redirectUrl) {
             this.downloadFile(redirectUrl, dest, name).then(resolve).catch(reject)
@@ -553,15 +498,17 @@ export class NodeManager {
   }
 
   private async addToPath(nodePath: string): Promise<void> {
-    try {
-      // 切换 Node.js 版本：按 …\nodejs 前缀整体移除旧版本 PATH 后前置新版本目录。
-      const replacePrefix = this.configStore.getNodePath()
-      const result = await this.pathManager.add([nodePath], replacePrefix)
-      if (!result.success) {
-        console.error('更新 Node.js PATH 失败:', result.message)
-      }
-    } catch (error: any) {
-      console.error('更新 Node.js PATH 失败:', error)
+    const replacePrefix = this.configStore.getNodePath()
+    const npmGlobal = join(process.env.APPDATA || '', 'npm')
+    if (npmGlobal && !existsSync(npmGlobal)) {
+      mkdirSync(npmGlobal, { recursive: true })
+    }
+    const result = await this.pathManager.add(
+      PathManager.nonempty([nodePath, npmGlobal]),
+      replacePrefix,
+    )
+    if (!result.success) {
+      throw new Error(`设置环境变量失败: ${result.message}`)
     }
   }
 
@@ -579,12 +526,9 @@ export class NodeManager {
 
   private getFallbackVersions(): AvailableNodeVersion[] {
     return [
-      { version: 'v22.12.0', date: '2024-12-03', lts: false, security: false, downloadUrl: 'https://nodejs.org/dist/v22.12.0/node-v22.12.0-win-x64.zip' },
-      { version: 'v22.11.0', date: '2024-10-29', lts: 'Jod', security: false, downloadUrl: 'https://nodejs.org/dist/v22.11.0/node-v22.11.0-win-x64.zip' },
-      { version: 'v20.18.1', date: '2024-11-21', lts: 'Iron', security: false, downloadUrl: 'https://nodejs.org/dist/v20.18.1/node-v20.18.1-win-x64.zip' },
-      { version: 'v20.18.0', date: '2024-10-03', lts: 'Iron', security: false, downloadUrl: 'https://nodejs.org/dist/v20.18.0/node-v20.18.0-win-x64.zip' },
-      { version: 'v18.20.5', date: '2024-11-21', lts: 'Hydrogen', security: false, downloadUrl: 'https://nodejs.org/dist/v18.20.5/node-v18.20.5-win-x64.zip' },
-      { version: 'v18.20.4', date: '2024-08-21', lts: 'Hydrogen', security: true, downloadUrl: 'https://nodejs.org/dist/v18.20.4/node-v18.20.4-win-x64.zip' },
+      { version: 'v24.19.0', date: '', lts: 'Krypton', security: false, downloadUrl: 'https://nodejs.org/dist/v24.19.0/node-v24.19.0-win-x64.zip' },
+      { version: 'v22.23.2', date: '', lts: 'Jod', security: false, downloadUrl: 'https://nodejs.org/dist/v22.23.2/node-v22.23.2-win-x64.zip' },
+      { version: 'v20.20.2', date: '', lts: 'Iron', security: false, downloadUrl: 'https://nodejs.org/dist/v20.20.2/node-v20.20.2-win-x64.zip' },
     ]
   }
 }

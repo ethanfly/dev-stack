@@ -1081,13 +1081,11 @@ onUnmounted(() => {
   transition: all 0.2s;
   
   &:hover {
-    border-color: var(--accent-light);
     background: var(--bg-hover);
   }
   
   &.selected {
-    border-color: var(--accent-color);
-    background: rgba(124, 58, 237, 0.05);
+    background: var(--select-fill);
   }
   
   .version-select-info {

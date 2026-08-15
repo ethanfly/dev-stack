@@ -394,9 +394,7 @@ const formatTime = (time: string | Date): string => {
   }
   
   &.active {
-    background: rgba(124, 58, 237, 0.1);
-    border-left: 3px solid var(--accent-color);
-    padding-left: 13px;
+    background: var(--select-fill);
   }
   
   .log-item-info {

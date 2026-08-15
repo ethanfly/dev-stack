@@ -7,6 +7,8 @@ import https from 'https'
 import http from 'http'
 import { createWriteStream } from 'fs'
 import { sendDownloadProgress } from '../main'
+import { SslManager } from './SslManager'
+import { catalogNginx } from './catalog'
 
 const execAsync = promisify(exec)
 
@@ -28,11 +30,13 @@ interface NginxStatus {
 
 export class NginxManager {
   private configStore: ConfigStore
+  private sslManager: SslManager
   private versionCache: { versions: AvailableNginxVersion[]; timestamp: number } | null = null
   private readonly CACHE_TTL = 5 * 60 * 1000 // 5分钟缓存
 
   constructor(configStore: ConfigStore) {
     this.configStore = configStore
+    this.sslManager = new SslManager(configStore)
   }
 
   /**
@@ -103,13 +107,12 @@ export class NginxManager {
 
     try {
       console.log('从 nginx.org 获取版本列表...')
-      versions = await this.fetchNginxVersions()
+      versions = await catalogNginx()
       console.log(`从 nginx.org 获取到 ${versions.length} 个 Nginx 版本`)
     } catch (error: any) {
       console.error('从 nginx.org 获取 Nginx 版本失败:', error.message)
     }
 
-    // 如果获取失败或为空，使用备用列表
     if (versions.length === 0) {
       console.log('使用备用 Nginx 版本列表')
       versions = this.getFallbackVersions()
@@ -121,93 +124,19 @@ export class NginxManager {
     return versions
   }
 
-  /**
-   * 从 nginx.org 下载页面获取版本列表
-   */
-  private async fetchNginxVersions(): Promise<AvailableNginxVersion[]> {
-    return new Promise((resolve, reject) => {
-      const options = {
-        hostname: 'nginx.org',
-        path: '/download/',
-        method: 'GET',
-        headers: {
-          'User-Agent': 'PHPer-Dev-Manager'
-        },
-        timeout: 15000
-      }
-
-      const request = http.request(options, (response) => {
-        let data = ''
-        response.on('data', chunk => data += chunk)
-        response.on('end', () => {
-          try {
-            const versions: AvailableNginxVersion[] = []
-            // 解析 HTML 页面中的 Windows 版本链接
-            // 格式: nginx-1.27.3.zip
-            const regex = /href="\/download\/nginx-(\d+\.\d+\.\d+)\.zip"/g
-            let match
-            const seen = new Set<string>()
-
-            while ((match = regex.exec(data)) !== null) {
-              const version = match[1]
-              if (!seen.has(version)) {
-                seen.add(version)
-                versions.push({
-                  version,
-                  downloadUrl: `https://nginx.org/download/nginx-${version}.zip`
-                })
-              }
-            }
-
-            // 按版本号排序（降序）
-            versions.sort((a, b) => {
-              const aParts = a.version.split('.').map(Number)
-              const bParts = b.version.split('.').map(Number)
-              for (let i = 0; i < 3; i++) {
-                if (aParts[i] !== bParts[i]) {
-                  return bParts[i] - aParts[i]
-                }
-              }
-              return 0
-            })
-
-            // 只返回前 10 个版本
-            resolve(versions.slice(0, 10))
-          } catch (e) {
-            reject(e)
-          }
-        })
-      })
-
-      request.on('error', reject)
-      request.on('timeout', () => {
-        request.destroy()
-        reject(new Error('请求超时'))
-      })
-      request.end()
-    })
-  }
-
-  /**
-   * 备用版本列表
-   */
   private getFallbackVersions(): AvailableNginxVersion[] {
     return [
       {
-        version: '1.27.3',
-        downloadUrl: 'https://nginx.org/download/nginx-1.27.3.zip'
+        version: '1.31.3',
+        downloadUrl: 'https://nginx.org/download/nginx-1.31.3.zip'
       },
       {
-        version: '1.26.2',
-        downloadUrl: 'https://nginx.org/download/nginx-1.26.2.zip'
+        version: '1.30.4',
+        downloadUrl: 'https://nginx.org/download/nginx-1.30.4.zip'
       },
       {
-        version: '1.25.5',
-        downloadUrl: 'https://nginx.org/download/nginx-1.25.5.zip'
-      },
-      {
-        version: '1.24.0',
-        downloadUrl: 'https://nginx.org/download/nginx-1.24.0.zip'
+        version: '1.28.3',
+        downloadUrl: 'https://nginx.org/download/nginx-1.28.3.zip'
       }
     ]
   }
@@ -491,6 +420,20 @@ export class NginxManager {
    */
   async addSite(site: SiteConfig): Promise<{ success: boolean; message: string }> {
     try {
+      if (site.isProxy) {
+        site.proxyTarget = this.normalizeProxyTarget(site.proxyTarget)
+        if (!site.proxyTarget) {
+          return { success: false, message: '请填写有效的代理目标，例如 http://127.0.0.1:3000' }
+        }
+      }
+      let sslNote = ''
+      if (site.ssl) {
+        const issued = await this.sslManager.ensureSiteCertificate(site.domain)
+        if (!issued.success) {
+          return issued
+        }
+        sslNote = issued.message
+      }
       // 生成配置文件
       let config: string
       if (site.isProxy && site.proxyTarget) {
@@ -514,7 +457,8 @@ export class NginxManager {
       // 保存到配置
       this.configStore.addSite(site)
 
-      return { success: true, message: `站点 ${site.name} 创建成功` }
+      const extra = sslNote ? ` ${sslNote}` : ''
+      return { success: true, message: `站点 ${site.name} 创建成功。${extra}` }
     } catch (error: any) {
       return { success: false, message: `创建站点失败: ${error.message}` }
     }
@@ -547,6 +491,18 @@ export class NginxManager {
    */
   async updateSite(originalName: string, site: SiteConfig): Promise<{ success: boolean; message: string }> {
     try {
+      if (site.isProxy) {
+        site.proxyTarget = this.normalizeProxyTarget(site.proxyTarget)
+        if (!site.proxyTarget) {
+          return { success: false, message: '请填写有效的代理目标，例如 http://127.0.0.1:3000' }
+        }
+      }
+      if (site.ssl) {
+        const issued = await this.sslManager.ensureSiteCertificate(site.domain)
+        if (!issued.success) {
+          return issued
+        }
+      }
       const sitesAvailable = this.configStore.getSitesAvailablePath()
       const sitesEnabled = this.configStore.getSitesEnabledPath()
       
@@ -638,37 +594,16 @@ export class NginxManager {
   }
 
   /**
-   * 申请 SSL 证书（Let's Encrypt）
+   * 为已有站点启用 HTTPS：生成本地 CA 签名证书、导入本机根存储、重写 Nginx 配置。
    */
-  async requestSSLCertificate(domain: string, email: string): Promise<{ success: boolean; message: string }> {
-    try {
-      // 检查是否安装了 win-acme
-      const acmePath = join(this.configStore.getBasePath(), 'tools', 'win-acme')
-      const wacs = join(acmePath, 'wacs.exe')
-
-      if (!existsSync(wacs)) {
-        return { 
-          success: false, 
-          message: '请先下载 win-acme 工具到 tools/win-acme 目录。下载地址: https://www.win-acme.com/' 
-        }
-      }
-
-      const sslPath = this.configStore.getSSLPath()
-      const certPath = join(sslPath, domain)
-      
-      if (!existsSync(certPath)) {
-        mkdirSync(certPath, { recursive: true })
-      }
-
-      // 使用 win-acme 申请证书
-      const command = `"${wacs}" --target manual --host ${domain} --validation selfhosting --emailaddress ${email} --accepttos --store pemfiles --pemfilespath "${certPath}"`
-      
-      await execAsync(command, { timeout: 120000 })
-
-      return { success: true, message: `SSL 证书已申请成功，保存在 ${certPath}` }
-    } catch (error: any) {
-      return { success: false, message: `申请 SSL 证书失败: ${error.message}` }
+  async requestSSLCertificate(domain: string, _email?: string): Promise<{ success: boolean; message: string }> {
+    const site = this.configStore.getSites().find((s) => s.domain === domain)
+    if (!site) {
+      const issued = await this.sslManager.ensureSiteCertificate(domain, true)
+      return issued
     }
+    site.ssl = true
+    return this.updateSite(site.name, site)
   }
 
   // ==================== 私有方法 ====================
@@ -807,12 +742,19 @@ server {
     return config
   }
 
+  private normalizeProxyTarget(target?: string): string {
+    const raw = (target || '').trim()
+    if (!raw) return ''
+    if (/^https?:\/\//i.test(raw)) return raw.replace(/\/+$/, '')
+    return `http://${raw.replace(/\/+$/, '')}`
+  }
+
   /**
    * 生成反向代理站点配置
    */
   private generateProxySiteConfig(site: SiteConfig): string {
     const logsPath = this.configStore.getLogsPath()
-    const proxyTarget = site.proxyTarget || 'http://127.0.0.1:3000'
+    const proxyTarget = this.normalizeProxyTarget(site.proxyTarget) || 'http://127.0.0.1:3000'
 
     let config = `
 # Reverse Proxy Site
@@ -827,15 +769,16 @@ server {
         proxy_pass ${proxyTarget};
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
+        proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_cache_bypass $http_upgrade;
-        
-        # WebSocket 支持
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
         proxy_read_timeout 86400;
+        proxy_buffering off;
     }
 }
 `
@@ -859,15 +802,16 @@ server {
         proxy_pass ${proxyTarget};
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
+        proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_cache_bypass $http_upgrade;
-        
-        # WebSocket 支持
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
         proxy_read_timeout 86400;
+        proxy_buffering off;
     }
 }
 `
@@ -973,7 +917,7 @@ server {
       const protocol = url.startsWith('https') ? https : http
 
       const request = protocol.get(url, (response) => {
-        if (response.statusCode === 301 || response.statusCode === 302) {
+        if (response.statusCode === 301 || response.statusCode === 302 || response.statusCode === 303 || response.statusCode === 307 || response.statusCode === 308) {
           const redirectUrl = response.headers.location
           if (redirectUrl) {
             file.close()

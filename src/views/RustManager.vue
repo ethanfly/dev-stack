@@ -10,33 +10,61 @@
       </p>
     </div>
 
-    <!-- rustup 状态提示 -->
     <el-alert
-      v-if="rustupStatus !== null"
-      :type="rustupStatus.installed ? 'success' : 'warning'"
+      v-if="rustupStatus?.installed"
+      type="success"
       :closable="false"
-      class="mb-4">
+      class="mb-4"
+    >
       <template #title>
-        <span v-if="rustupStatus.installed">
-          rustup {{ rustupStatus.version }}
-          <span v-if="rustupStatus.rustcVersion">
-            · rustc {{ rustupStatus.rustcVersion }}
-          </span>
-        </span>
-        <span v-else>
-          未检测到 rustup。Rust 管理依赖 rustup，请先安装
-          <a href="https://rustup.rs" target="_blank">rustup.rs</a>
-          或用 mise 安装：mise use -g rust@stable
+        rustup {{ rustupStatus.version }}
+        <span v-if="rustupStatus.rustcVersion">
+          · rustc {{ rustupStatus.rustcVersion }}
         </span>
       </template>
     </el-alert>
+
+    <div v-else-if="rustupStatus && !rustupStatus.installed" class="card rustup-setup">
+      <div class="card-header">
+        <span class="card-title">安装 Rust</span>
+      </div>
+      <div class="card-content">
+        <p class="setup-desc">
+          未检测到 rustup。点击后将自动下载 rustup-init 并静默安装 rustup + stable，无需自行下载脚本。
+        </p>
+        <el-button
+          type="primary"
+          :loading="installingRustup"
+          @click="installRustup"
+        >
+          一键安装 Rust
+        </el-button>
+        <div
+          v-if="installingRustup && downloadProgress.total > 0"
+          class="download-progress"
+        >
+          <div class="progress-info">
+            <span>正在下载 rustup-init</span>
+            <span
+              >{{ formatSize(downloadProgress.downloaded) }} /
+              {{ formatSize(downloadProgress.total) }}</span
+            >
+          </div>
+          <el-progress :percentage="downloadProgress.progress" :stroke-width="10" />
+        </div>
+      </div>
+    </div>
 
     <!-- 已安装 toolchain -->
     <div class="card">
       <div class="card-header">
         <span class="card-title">已安装 toolchain</span>
         <div class="header-actions">
-          <el-button @click="updateAll" :loading="updating">
+          <el-button
+            @click="updateAll"
+            :loading="updating"
+            :disabled="!rustupStatus?.installed"
+          >
             <el-icon><Refresh /></el-icon>
             更新全部
           </el-button>
@@ -111,8 +139,8 @@
           <el-icon><InfoFilled /></el-icon>
           安装方式
         </template>
-        通过 rustup 安装。stable/beta/nightly 为 channel（持续更新到最新），
-        下方列表为具体历史点版本。安装可能需要较长时间。
+        未安装 rustup 时会先自动下载 rustup-init 并静默安装。
+        stable/beta/nightly 为持续更新的 channel，下方为历史点版本。首次安装可能需要几分钟。
       </el-alert>
       <div v-if="loadingAvailableVersions" class="loading-state">
         <el-icon class="is-loading"><Loading /></el-icon>
@@ -150,7 +178,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted } from 'vue'
+  import { ref, reactive, onMounted, onUnmounted } from 'vue'
   import { ElMessage, ElMessageBox } from 'element-plus'
   import { Tools, Refresh, Plus, InfoFilled, Loading } from '@element-plus/icons-vue'
 
@@ -182,11 +210,17 @@
   const uninstalling = ref('')
   const settingActive = ref('')
   const updating = ref(false)
+  const installingRustup = ref(false)
   const rustupStatus = ref<{
     installed: boolean
     version?: string
     rustcVersion?: string
   } | null>(null)
+  const downloadProgress = reactive({
+    progress: 0,
+    downloaded: 0,
+    total: 0,
+  })
 
   const loadVersions = async () => {
     loading.value = true
@@ -217,8 +251,60 @@
     } catch {}
   }
 
+  const formatSize = (bytes: number) => {
+    if (!bytes) return '0 B'
+    const units = ['B', 'KB', 'MB', 'GB']
+    let n = bytes
+    let i = 0
+    while (n >= 1024 && i < units.length - 1) {
+      n /= 1024
+      i++
+    }
+    return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
+  }
+
+  const onDownloadProgress = (data: {
+    type: string
+    progress: number
+    downloaded: number
+    total: number
+  }) => {
+    if (data.type === 'rust') {
+      downloadProgress.progress = data.progress
+      downloadProgress.downloaded = data.downloaded
+      downloadProgress.total = data.total
+    }
+  }
+
+  const installRustup = async () => {
+    installingRustup.value = true
+    downloadProgress.progress = 0
+    downloadProgress.downloaded = 0
+    downloadProgress.total = 0
+    try {
+      const result = await window.electronAPI?.rust.installRustup('stable')
+      if (result?.success) {
+        ElMessage.success(result.message)
+        await checkSystem()
+        await loadVersions()
+      } else {
+        ElMessage.error(result?.message || '安装失败')
+      }
+    } catch (e: any) {
+      ElMessage.error(e.message)
+    } finally {
+      installingRustup.value = false
+      downloadProgress.progress = 0
+      downloadProgress.downloaded = 0
+      downloadProgress.total = 0
+    }
+  }
+
   const installVersion = async (row: AvailableRustVersion) => {
     installing.value = row.name
+    downloadProgress.progress = 0
+    downloadProgress.downloaded = 0
+    downloadProgress.total = 0
     try {
       const result = await window.electronAPI?.rust.install(row.name)
       if (result?.success) {
@@ -231,6 +317,9 @@
       ElMessage.error(e.message)
     } finally {
       installing.value = ''
+      downloadProgress.progress = 0
+      downloadProgress.downloaded = 0
+      downloadProgress.total = 0
     }
   }
 
@@ -295,37 +384,40 @@
     loadVersions()
     loadAvailableVersions()
     checkSystem()
+    window.electronAPI?.onDownloadProgress(onDownloadProgress)
+  })
+
+  onUnmounted(() => {
+    window.electronAPI?.removeDownloadProgressListener(onDownloadProgress)
   })
 </script>
 
 <style lang="scss" scoped>
   .version-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-    gap: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
 
   .version-card {
-    background: var(--bg-input);
+    background: var(--bg-card);
     border: 1px solid var(--border-color);
-    border-radius: 16px;
-    padding: 24px;
-    transition: all 0.3s;
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+    transition: background 0.15s;
     display: flex;
-    flex-direction: column;
-    gap: 20px;
+    flex-direction: row;
+    align-items: center;
+    gap: 16px;
     min-width: 0;
     overflow: hidden;
 
     &:hover {
-      border-color: var(--accent-color);
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-      transform: translateY(-2px);
+      background: var(--bg-hover);
     }
 
     &.active {
-      border-color: var(--accent-border);
-      background: var(--accent-bg);
+      background: var(--select-fill);
     }
 
     .version-main {
@@ -335,17 +427,17 @@
     }
 
     .version-icon {
-      width: 40px;
-      height: 40px;
+      width: 36px;
+      height: 36px;
       border-radius: var(--radius-md);
-      background: var(--accent-bg);
-      border: 1px solid var(--accent-border);
+      background: var(--bg-input);
+      border: none;
       display: flex;
       align-items: center;
       justify-content: center;
-      color: var(--accent-color);
+      color: var(--text-secondary);
       flex-shrink: 0;
-      font-size: 20px;
+      font-size: 18px;
     }
 
     .version-content {
@@ -362,10 +454,10 @@
     }
 
     .version-number {
-      font-size: 20px;
-      font-weight: 700;
+      font-size: 15px;
+      font-weight: 600;
       color: var(--text-primary);
-      letter-spacing: -0.5px;
+      letter-spacing: -0.2px;
     }
 
     .version-meta {
@@ -385,13 +477,9 @@
 
     .version-actions {
       display: flex;
-      gap: 10px;
-      padding-top: 4px;
-      border-top: 1px solid var(--border-color);
-
-      .el-button {
-        flex: 1;
-      }
+      gap: 8px;
+      margin-left: auto;
+      flex-shrink: 0;
     }
   }
 
@@ -400,6 +488,14 @@
       --el-table-bg-color: transparent;
       --el-table-tr-bg-color: transparent;
       --el-table-header-bg-color: var(--bg-input);
+    }
+  }
+
+  .rustup-setup {
+    .setup-desc {
+      color: var(--text-secondary);
+      margin-bottom: 16px;
+      line-height: 1.6;
     }
   }
 

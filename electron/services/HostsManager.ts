@@ -89,7 +89,7 @@ export class HostsManager {
         content = content.replace(regex, `${ip}\t${domain}`)
       } else {
         // 添加新条目
-        const newEntry = `${ip}\t${domain}\t# Added by PHPer Dev Manager`
+        const newEntry = `${ip}\t${domain}\t# Added by DevStack`
         content = content.trimEnd() + '\n' + newEntry + '\n'
       }
 
@@ -195,7 +195,7 @@ export class HostsManager {
         const command = `copy /Y "${tempPath}" "${this.hostsPath}"`
         
         try {
-          await sudoExec(command, 'PHPer Dev Manager')
+          await sudoExec(command, 'DevStack')
           // 清理临时文件
           try {
             unlinkSync(tempPath)

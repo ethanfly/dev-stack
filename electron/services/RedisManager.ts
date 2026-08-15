@@ -7,6 +7,7 @@ import https from 'https'
 import http from 'http'
 import { createWriteStream } from 'fs'
 import { sendDownloadProgress } from '../main'
+import { catalogRedis } from './catalog'
 
 const execAsync = promisify(exec)
 
@@ -92,26 +93,8 @@ export class RedisManager {
     let versions: AvailableRedisVersion[] = []
 
     try {
-      // 从 redis-windows GitHub releases 获取版本列表
       console.log('从 GitHub 获取 Redis Windows 版本列表...')
-      const releases = await this.fetchGitHubReleases('redis-windows', 'redis-windows')
-      
-      for (const release of releases) {
-        const version = release.tag_name.replace(/^v/, '')
-        
-        // 查找 Windows x64 ZIP 文件
-        const asset = release.assets?.find((a: any) => 
-          a.name.includes('Windows-x64') && a.name.endsWith('.zip')
-        )
-        
-        if (asset) {
-          versions.push({
-            version,
-            downloadUrl: asset.browser_download_url
-          })
-        }
-      }
-
+      versions = await catalogRedis()
       console.log(`从 GitHub 获取到 ${versions.length} 个 Redis 版本`)
     } catch (error: any) {
       console.error('从 GitHub 获取 Redis 版本失败:', error.message)
@@ -129,66 +112,15 @@ export class RedisManager {
     return versions
   }
 
-  /**
-   * 从 GitHub API 获取 releases
-   */
-  private async fetchGitHubReleases(owner: string, repo: string): Promise<any[]> {
-    return new Promise((resolve, reject) => {
-      const options = {
-        hostname: 'api.github.com',
-        path: `/repos/${owner}/${repo}/releases?per_page=20`,
-        method: 'GET',
-        headers: {
-          'User-Agent': 'PHPer-Dev-Manager',
-          'Accept': 'application/vnd.github.v3+json'
-        }
-      }
-
-      const request = https.request(options, (response) => {
-        let data = ''
-        response.on('data', chunk => data += chunk)
-        response.on('end', () => {
-          try {
-            if (response.statusCode === 200) {
-              resolve(JSON.parse(data))
-            } else {
-              reject(new Error(`GitHub API 返回 ${response.statusCode}`))
-            }
-          } catch (e) {
-            reject(e)
-          }
-        })
-      })
-
-      request.on('error', reject)
-      request.setTimeout(15000, () => {
-        request.destroy()
-        reject(new Error('请求超时'))
-      })
-      request.end()
-    })
-  }
-
-  /**
-   * 备用版本列表
-   */
   private getFallbackVersions(): AvailableRedisVersion[] {
     return [
       {
+        version: '8.10.0',
+        downloadUrl: 'https://github.com/redis-windows/redis-windows/releases/download/8.10.0/Redis-8.10.0-Windows-x64-msys2.zip'
+      },
+      {
         version: '7.4.2',
         downloadUrl: 'https://github.com/redis-windows/redis-windows/releases/download/7.4.2/Redis-7.4.2-Windows-x64.zip'
-      },
-      {
-        version: '7.2.7',
-        downloadUrl: 'https://github.com/redis-windows/redis-windows/releases/download/7.2.7/Redis-7.2.7-Windows-x64.zip'
-      },
-      {
-        version: '7.0.15',
-        downloadUrl: 'https://github.com/redis-windows/redis-windows/releases/download/7.0.15/Redis-7.0.15-Windows-x64.zip'
-      },
-      {
-        version: '6.2.16',
-        downloadUrl: 'https://github.com/redis-windows/redis-windows/releases/download/6.2.16/Redis-6.2.16-Windows-x64.zip'
       }
     ]
   }
@@ -554,25 +486,43 @@ protected-mode yes
   }
 
   private async flattenDirectory(dir: string): Promise<void> {
-    const items = readdirSync(dir, { withFileTypes: true })
-    
-    // 检查是否只有一个子目录
-    const subdirs = items.filter(item => item.isDirectory())
-    if (subdirs.length === 1 && items.filter(item => !item.isDirectory()).length === 0) {
-      const subdir = join(dir, subdirs[0].name)
+    const { rename } = await import('fs/promises')
+
+    const promote = async (subdir: string) => {
       const subItems = readdirSync(subdir)
-      
-      const { rename } = await import('fs/promises')
-      
-      // 移动子目录中的所有文件到父目录
       for (const item of subItems) {
         const srcPath = join(subdir, item)
         const destPath = join(dir, item)
+        if (existsSync(destPath)) continue
         await rename(srcPath, destPath)
       }
-      
-      // 删除空的子目录
-      rmdirSync(subdir)
+      try {
+        rmdirSync(subdir)
+      } catch {
+        // 子目录可能仍有冲突文件，忽略
+      }
+    }
+
+    // 便携包可能套一层 Redis-x.y.z-Windows-x64-msys2/ 目录
+    for (let depth = 0; depth < 3; depth++) {
+      if (existsSync(join(dir, 'redis-server.exe'))) return
+      const items = readdirSync(dir, { withFileTypes: true })
+      const nested = items.find(
+        (item) =>
+          item.isDirectory() &&
+          existsSync(join(dir, item.name, 'redis-server.exe')),
+      )
+      if (nested) {
+        await promote(join(dir, nested.name))
+        continue
+      }
+      const onlyDir = items.filter((item) => item.isDirectory())
+      const files = items.filter((item) => !item.isDirectory())
+      if (onlyDir.length === 1 && files.length === 0) {
+        await promote(join(dir, onlyDir[0].name))
+        continue
+      }
+      break
     }
   }
 
@@ -587,7 +537,7 @@ protected-mode yes
         }
       }, (response) => {
         // 处理重定向
-        if (response.statusCode === 301 || response.statusCode === 302) {
+        if (response.statusCode === 301 || response.statusCode === 302 || response.statusCode === 303 || response.statusCode === 307 || response.statusCode === 308) {
           const redirectUrl = response.headers.location
           if (redirectUrl) {
             file.close()

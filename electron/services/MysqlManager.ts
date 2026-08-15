@@ -7,6 +7,7 @@ import https from 'https'
 import http from 'http'
 import { createWriteStream } from 'fs'
 import { sendDownloadProgress } from '../main'
+import { catalogMysql } from './catalog'
 
 const execAsync = promisify(exec)
 
@@ -21,11 +22,6 @@ interface AvailableMysqlVersion {
   downloadUrl: string
   mirrors?: string[]  // 备用下载链接
 }
-
-// 阿里云镜像基础地址
-const ALIYUN_MIRROR_BASE = 'https://mirrors.aliyun.com/mysql/'
-// 搜狐镜像作为备用
-const SOHU_MIRROR_BASE = 'https://mirrors.sohu.com/mysql/'
 
 export class MysqlManager {
   private configStore: ConfigStore
@@ -71,11 +67,9 @@ export class MysqlManager {
   }
 
   /**
-   * 获取可用的 MySQL 版本列表（从阿里云镜像动态获取）
-   * 镜像地址: https://mirrors.aliyun.com/mysql/
+   * 获取可用的 MySQL 版本列表（官方 CDN，版本来自 mysql-server 标签）
    */
   async getAvailableVersions(): Promise<AvailableMysqlVersion[]> {
-    // 检查缓存
     if (this.cachedVersions && Date.now() - this.cacheTime < this.CACHE_DURATION) {
       console.log('使用缓存的 MySQL 版本列表')
       const installed = await this.getInstalledVersions()
@@ -86,101 +80,23 @@ export class MysqlManager {
     let versions: AvailableMysqlVersion[] = []
 
     try {
-      console.log('从阿里云镜像获取 MySQL 版本列表...')
-      
-      // 1. 获取主目录页面，解析出 MySQL-X.X 目录
-      const mainPageHtml = await this.fetchHtml(ALIYUN_MIRROR_BASE)
-      
-      // 匹配 MySQL-5.7, MySQL-8.0 等目录（只获取5.7和8.x系列）
-      const dirRegex = /<a href="(MySQL-(5\.7|8\.\d+)\/)">/g
-      const mysqlDirs: string[] = []
-      let match
-      
-      while ((match = dirRegex.exec(mainPageHtml)) !== null) {
-        mysqlDirs.push(match[1])
-      }
-      
-      console.log(`找到 ${mysqlDirs.length} 个 MySQL 版本目录: ${mysqlDirs.join(', ')}`)
-
-      // 2. 遍历每个目录，获取 Windows 版本的 zip 文件
-      for (const dir of mysqlDirs) {
-        try {
-          const dirUrl = `${ALIYUN_MIRROR_BASE}${dir}`
-          const dirHtml = await this.fetchHtml(dirUrl)
-          
-          // 匹配 mysql-X.X.XX-winx64.zip 格式的文件
-          const fileRegex = /<a href="(mysql-(\d+\.\d+\.\d+)-winx64\.zip)">/g
-          
-          while ((match = fileRegex.exec(dirHtml)) !== null) {
-            const fileName = match[1]
-            const version = match[2]
-            const downloadUrl = `${ALIYUN_MIRROR_BASE}${dir}${fileName}`
-            
-            // 添加搜狐镜像作为备用
-            const majorMinor = version.split('.').slice(0, 2).join('.')
-            const sohuUrl = `${SOHU_MIRROR_BASE}MySQL-${majorMinor}/${fileName}`
-            
-            versions.push({
-              version,
-              downloadUrl,
-              mirrors: [sohuUrl]
-            })
-          }
-        } catch (dirError) {
-          console.error(`获取目录 ${dir} 失败:`, dirError)
-        }
-      }
-
-      // 按版本号降序排序
-      versions.sort((a, b) => {
-        const aParts = a.version.split('.').map(Number)
-        const bParts = b.version.split('.').map(Number)
-        for (let i = 0; i < 3; i++) {
-          if (bParts[i] !== aParts[i]) {
-            return bParts[i] - aParts[i]
-          }
-        }
-        return 0
-      })
-
-      // 去重（保留最新版本）
-      const seen = new Set<string>()
-      versions = versions.filter(v => {
-        if (seen.has(v.version)) return false
-        seen.add(v.version)
-        return true
-      })
-
-      console.log(`从阿里云镜像获取到 ${versions.length} 个 MySQL 版本`)
-      
-      // 更新缓存
+      console.log('从 MySQL 官方源获取版本列表...')
+      versions = await catalogMysql()
+      console.log(`从官方源获取到 ${versions.length} 个 MySQL 版本`)
       this.cachedVersions = versions
       this.cacheTime = Date.now()
-
     } catch (error) {
-      console.error('从阿里云镜像获取版本列表失败，使用备用列表:', error)
-      
-      // 备用列表
+      console.error('从官方源获取 MySQL 版本失败，使用备用列表:', error)
       versions = [
         {
-          version: '8.0.28',
-          downloadUrl: 'https://mirrors.sohu.com/mysql/MySQL-8.0/mysql-8.0.28-winx64.zip',
-          mirrors: []
+          version: '8.4.11',
+          downloadUrl: 'https://cdn.mysql.com/Downloads/MySQL-8.4/mysql-8.4.11-winx64.zip',
+          mirrors: ['https://repo.huaweicloud.com/mysql/Downloads/MySQL-8.4/mysql-8.4.11-winx64.zip']
         },
         {
-          version: '8.0.27',
-          downloadUrl: 'https://mirrors.sohu.com/mysql/MySQL-8.0/mysql-8.0.27-winx64.zip',
-          mirrors: []
-        },
-        {
-          version: '5.7.38',
-          downloadUrl: 'https://mirrors.sohu.com/mysql/MySQL-5.7/mysql-5.7.38-winx64.zip',
-          mirrors: []
-        },
-        {
-          version: '5.7.37',
-          downloadUrl: 'https://mirrors.sohu.com/mysql/MySQL-5.7/mysql-5.7.37-winx64.zip',
-          mirrors: []
+          version: '8.0.46',
+          downloadUrl: 'https://cdn.mysql.com/Downloads/MySQL-8.0/mysql-8.0.46-winx64.zip',
+          mirrors: ['https://repo.huaweicloud.com/mysql/Downloads/MySQL-8.0/mysql-8.0.46-winx64.zip']
         }
       ]
     }
@@ -190,46 +106,6 @@ export class MysqlManager {
     const installedVersions = installed.map(v => v.version)
     
     return versions.filter(v => !installedVersions.includes(v.version))
-  }
-
-  /**
-   * 获取网页 HTML 内容
-   */
-  private async fetchHtml(url: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const protocol = url.startsWith('https') ? https : http
-      
-      const request = protocol.get(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
-      }, (response) => {
-        // 处理重定向
-        if (response.statusCode === 301 || response.statusCode === 302 || response.statusCode === 307) {
-          const redirectUrl = response.headers.location
-          if (redirectUrl) {
-            this.fetchHtml(redirectUrl).then(resolve).catch(reject)
-            return
-          }
-        }
-
-        if (response.statusCode !== 200) {
-          reject(new Error(`HTTP ${response.statusCode}`))
-          return
-        }
-
-        let html = ''
-        response.on('data', (chunk) => (html += chunk))
-        response.on('end', () => resolve(html))
-        response.on('error', reject)
-      })
-
-      request.on('error', reject)
-      request.setTimeout(15000, () => {
-        request.destroy()
-        reject(new Error('请求超时'))
-      })
-    })
   }
 
   /**
@@ -291,16 +167,28 @@ export class MysqlManager {
       
       console.log('解压完成，处理目录...')
 
-      // 重命名目录（MySQL 解压后目录名带完整版本号）
-      const extractedDir = join(mysqlBaseDir, `mysql-${version}-winx64`)
-      if (existsSync(extractedDir) && !existsSync(mysqlPath)) {
+      // 重命名目录（官方 zip 解压后一般是 mysql-X.Y.Z-winx64）
+      let extractedDir = join(mysqlBaseDir, `mysql-${version}-winx64`)
+      if (!existsSync(extractedDir)) {
+        const hit = readdirSync(mysqlBaseDir, { withFileTypes: true }).find(
+          (d) =>
+            d.isDirectory() &&
+            d.name.startsWith(`mysql-${version}`) &&
+            existsSync(join(mysqlBaseDir, d.name, "bin", "mysqld.exe")),
+        )
+        if (hit) extractedDir = join(mysqlBaseDir, hit.name)
+      }
+      if (existsSync(extractedDir) && extractedDir !== mysqlPath && !existsSync(mysqlPath)) {
         try {
           renameSync(extractedDir, mysqlPath)
           console.log(`目录重命名: ${extractedDir} -> ${mysqlPath}`)
         } catch (renameError: any) {
           console.error('重命名失败，尝试复制:', renameError.message)
-          // 如果重命名失败，可能是跨盘符，尝试使用 fs-extra 或手动复制
         }
+      }
+
+      if (!existsSync(join(mysqlPath, "bin", "mysqld.exe"))) {
+        return { success: false, message: `安装失败：未找到 mysqld.exe（${mysqlPath}）` }
       }
 
       // 删除临时文件
@@ -867,7 +755,7 @@ WshShell.Run """${mysqldPath.replace(/\\/g, '\\\\')}""" & " --defaults-file=""${
         }
       }, (response) => {
         // 处理重定向
-        if (response.statusCode === 301 || response.statusCode === 302 || response.statusCode === 307) {
+        if (response.statusCode === 301 || response.statusCode === 302 || response.statusCode === 303 || response.statusCode === 307 || response.statusCode === 308) {
           const redirectUrl = response.headers.location
           if (redirectUrl) {
             file.close()

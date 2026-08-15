@@ -63,9 +63,19 @@ if ($null -eq $p) { '' } else { $p }
    * @param replacePrefix 仅移除以此为前缀的条目（应为本应用托管的工具根目录，
    *                       如 C:\service\php）。不传则只做去重添加，不移除任何条目。
    */
+  /** 只保留非空路径；optional 的目录若尚不存在也允许写入（例如即将创建的 Scripts）。 */
+  static nonempty(entries: Array<string | null | undefined>): string[] {
+    return entries.filter((e): e is string => !!e && !!e.trim()).map((e) => e.trim());
+  }
+
+  /**
+   * 添加若干路径到用户 PATH（前置），并可选移除位于 replacePrefix 之下的旧条目。
+   * userVars 会一并写入用户环境（如 CARGO_HOME），避免只改 PATH 工具仍找不到数据目录。
+   */
   async add(
     entries: string[],
-    replacePrefix?: string
+    replacePrefix?: string,
+    userVars?: Record<string, string>
   ): Promise<{ success: boolean; message: string }> {
     return withPathLock(async () => {
       const script = this.buildScript();
@@ -73,22 +83,22 @@ if ($null -eq $p) { '' } else { $p }
         mkdirSync(this.tempPath, { recursive: true });
       }
       const scriptPath = join(this.tempPath, "path_manager.ps1");
-      // 通过文件传递 JSON，彻底规避命令行对 " 和 \ 的转义问题
       const addJsonPath = join(this.tempPath, "path_add.json");
       writeFileSync(
         addJsonPath,
-        JSON.stringify(entries.filter((e) => e && e.trim())),
+        JSON.stringify({
+          entries: PathManager.nonempty(entries),
+          replacePrefix: replacePrefix || "",
+          backupFile: this.backupFile,
+          userVars: userVars || {},
+        }),
         "utf-8"
       );
-      // 关键：脚本含中文注释/字符串，必须写成 UTF-8 with BOM。
-      // Windows PowerShell 5.1 对无 BOM 的 .ps1 默认按系统代码页（中文系统为
-      // GBK/936）解码，中文会被错解导致 ParserError（UnexpectedToken } 等）。
-      // 加上 BOM 后 PowerShell 会正确按 UTF-8 解码。
-      writeFileSync(scriptPath, "﻿" + script, "utf-8");
+      writeFileSync(scriptPath, "\uFEFF" + script, "utf-8");
 
       try {
         const { stdout, stderr } = await execAsync(
-          `powershell -NoProfile -ExecutionPolicy Bypass -File "${scriptPath}" -AddFile "${addJsonPath}" -ReplacePrefix "${replacePrefix || ""}" -BackupFile "${this.backupFile}"`,
+          `powershell -NoProfile -ExecutionPolicy Bypass -File "${scriptPath}" -AddFile "${addJsonPath}"`,
           { windowsHide: true, timeout: 30000 }
         );
         const out = (stdout || "").trim();
@@ -98,9 +108,12 @@ if ($null -eq $p) { '' } else { $p }
         if (out.startsWith("ABORT")) {
           return { success: false, message: out };
         }
-        // 同步刷新当前 Electron 进程的环境变量，使本会话内的 exec('tool')
-        // 能立即解析到新加入的路径（无需重启应用）。
         this.refreshProcessPath(entries, replacePrefix);
+        if (userVars) {
+          for (const [k, v] of Object.entries(userVars)) {
+            if (k) process.env[k] = v;
+          }
+        }
         return { success: true, message: out };
       } catch (e: any) {
         return {
@@ -165,18 +178,23 @@ if ($null -eq $p) { '' } else { $p }
 
   private buildScript(): string {
     return `
-param(
-  [string]$AddFile = '',
-  [string]$ReplacePrefix = '',
-  [string]$BackupFile = ''
-)
+param([string]$AddFile = '')
 $ErrorActionPreference = 'Stop'
-# 让本脚本的 stdout/stderr 以 UTF-8 输出，避免被 Node execAsync 按 UTF-8
-# 解码时出现乱码（默认中文系统下 PowerShell 控制台输出是 GBK）。
 try {
   [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
   $OutputEncoding = [System.Text.Encoding]::UTF8
 } catch {}
+
+$cfg = $null
+if ($AddFile -ne '' -and (Test-Path $AddFile)) {
+  $cfg = (Get-Content -Raw $AddFile) | ConvertFrom-Json
+}
+$addList = @()
+if ($cfg -and $cfg.entries) { $addList = @($cfg.entries) }
+$ReplacePrefix = ''
+if ($cfg -and $cfg.replacePrefix) { $ReplacePrefix = [string]$cfg.replacePrefix }
+$BackupFile = ''
+if ($cfg -and $cfg.backupFile) { $BackupFile = [string]$cfg.backupFile }
 
 # 1. 读取当前用户 PATH（GetEnvironmentVariable 已展开 %VAR%）
 $userPath = [Environment]::GetEnvironmentVariable('PATH', 'User')
@@ -200,15 +218,6 @@ foreach ($p in ($userPath -split ';')) {
   if ($p.Trim() -ne '') { [void]$paths.Add($p) }
 }
 $beforeCount = $paths.Count
-
-# 4. 从文件读取要添加的条目（避免命令行对反斜杠/引号的转义问题）
-$addList = @()
-if ($AddFile -ne '' -and (Test-Path $AddFile)) {
-  try {
-    $raw = Get-Content -Raw $AddFile
-    $addList = $raw | ConvertFrom-Json
-  } catch { $addList = @() }
-}
 
 # 5. 移除阶段：仅移除「精确属于 ReplacePrefix 之下」的条目（大小写不敏感前缀匹配）
 $rp = ''
@@ -254,6 +263,17 @@ if ($origLen -gt 500 -and $newPath.Length -lt ($origLen * 0.4)) {
 
 # 8. 写回（REG_SZ/REG_EXPAND_SZ 由 .NET 自动判定）
 [Environment]::SetEnvironmentVariable('PATH', $newPath, 'User')
+
+# 8b. 附带用户级环境变量（CARGO_HOME / RUSTUP_HOME 等）
+if ($cfg -and $cfg.userVars) {
+  foreach ($p in $cfg.userVars.PSObject.Properties) {
+    $n = [string]$p.Name
+    $v = [string]$p.Value
+    if ($n -ne '') {
+      [Environment]::SetEnvironmentVariable($n, $v, 'User')
+    }
+  }
+}
 
 # 9. 广播 WM_SETTINGCHANGE，通知已运行的进程刷新环境变量
 try {

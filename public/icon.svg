@@ -1,40 +1,31 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="DevStack">
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0d9488"/>
-      <stop offset="100%" stop-color="#0f766e"/>
+    <linearGradient id="ds-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#134e4a"/>
+      <stop offset="100%" stop-color="#0d1117"/>
     </linearGradient>
-    <linearGradient id="el" x1="0%" y1="0%" x2="100%" y2="100%">
+    <linearGradient id="ds-a" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#5eead4"/>
       <stop offset="100%" stop-color="#2dd4bf"/>
     </linearGradient>
+    <linearGradient id="ds-b" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2dd4bf"/>
+      <stop offset="100%" stop-color="#0d9488"/>
+    </linearGradient>
+    <linearGradient id="ds-c" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0d9488"/>
+      <stop offset="100%" stop-color="#115e59"/>
+    </linearGradient>
   </defs>
-
-  <!-- 圆角方形背景 -->
-  <rect x="2" y="2" width="124" height="124" rx="28" ry="28" fill="url(#bg)"/>
-
-  <!-- PHP elephant (simplified, modern) -->
-  <g transform="translate(16, 16) scale(0.76)">
-    <!-- 身体 -->
-    <ellipse cx="64" cy="56" rx="40" ry="28" fill="url(#el)" opacity="0.95"/>
-    <!-- 头 -->
-    <circle cx="34" cy="42" r="22" fill="url(#el)" opacity="0.95"/>
-    <!-- 耳朵 -->
-    <ellipse cx="48" cy="24" rx="12" ry="16" fill="#2dd4bf" opacity="0.7"/>
-    <!-- 眼睛 -->
-    <circle cx="28" cy="38" r="3.5" fill="#0f766e"/>
-    <circle cx="29" cy="37" r="1.2" fill="#fff"/>
-    <!-- 鼻子 -->
-    <path d="M15 48 Q8 62 13 74 Q17 82 22 78 Q26 72 24 64 Q22 56 20 48" fill="url(#el)" opacity="0.95"/>
-    <!-- 腿 -->
-    <rect x="38" y="74" width="10" height="20" rx="4" fill="url(#el)" opacity="0.9"/>
-    <rect x="54" y="74" width="10" height="20" rx="4" fill="url(#el)" opacity="0.9"/>
-    <rect x="70" y="74" width="10" height="18" rx="4" fill="url(#el)" opacity="0.9"/>
-    <rect x="86" y="74" width="10" height="16" rx="4" fill="url(#el)" opacity="0.9"/>
-    <!-- 尾巴 -->
-    <path d="M102 48 Q112 44 110 56 Q114 64 108 60" fill="none" stroke="url(#el)" stroke-width="4.5" stroke-linecap="round" opacity="0.8"/>
+  <rect x="2" y="2" width="124" height="124" rx="28" fill="url(#ds-bg)"/>
+  <!-- three stacked slabs: a software stack, not a language mark -->
+  <g transform="translate(64 70)">
+    <ellipse cx="0" cy="18" rx="38" ry="12" fill="url(#ds-c)"/>
+    <ellipse cx="0" cy="2" rx="38" ry="12" fill="url(#ds-b)"/>
+    <ellipse cx="0" cy="-14" rx="38" ry="12" fill="url(#ds-a)"/>
+    <circle cx="-16" cy="-14" r="3.2" fill="#ecfeff"/>
+    <circle cx="8" cy="2" r="3.2" fill="#ccfbf1"/>
+    <circle cx="-4" cy="18" r="3.2" fill="#99f6e4"/>
+    <path d="M-16 -14 L8 2 L-4 18" fill="none" stroke="#ecfeff" stroke-width="1.6" stroke-linecap="round" opacity="0.55"/>
   </g>
-
-  <!-- PHP 文字 -->
-  <text x="64" y="114" text-anchor="middle" font-family="'SF Pro Display', 'Inter', Arial, sans-serif" font-weight="700" font-size="17" fill="#ffffff" opacity="0.9" letter-spacing="1">PHP</text>
 </svg>

@@ -8,6 +8,7 @@ import http from 'http'
 import { createWriteStream } from 'fs'
 import { sendDownloadProgress } from '../main'
 import { PathManager } from './PathManager'
+import { catalogPython } from './catalog'
 
 const execAsync = promisify(exec)
 
@@ -222,14 +223,13 @@ export class PythonManager {
     let versions: AvailablePythonVersion[] = []
 
     try {
-      console.log('从 python.org 获取版本列表...')
-      versions = await this.fetchPythonVersions()
+      console.log('从 python.org/ftp 获取版本列表...')
+      versions = await catalogPython()
       console.log(`从 python.org 获取到 ${versions.length} 个 Python 版本`)
     } catch (error: any) {
       console.error('从 python.org 获取 Python 版本失败:', error.message)
     }
 
-    // 如果获取失败或为空，使用备用列表
     if (versions.length === 0) {
       console.log('使用备用 Python 版本列表')
       versions = this.getFallbackVersions()
@@ -245,116 +245,21 @@ export class PythonManager {
     return versions.filter(v => !installedVersions.includes(v.version))
   }
 
-  /**
-   * 从 python.org API 获取版本列表
-   */
-  private async fetchPythonVersions(): Promise<AvailablePythonVersion[]> {
-    return new Promise((resolve, reject) => {
-      const options = {
-        hostname: 'www.python.org',
-        path: '/api/v2/downloads/release/?is_published=true&pre_release=false&page_size=50',
-        method: 'GET',
-        headers: {
-          'User-Agent': 'PHPer-Dev-Manager',
-          'Accept': 'application/json'
-        },
-        timeout: 15000
-      }
-
-      const request = https.request(options, (response) => {
-        let data = ''
-        response.on('data', chunk => data += chunk)
-        response.on('end', () => {
-          try {
-            const json = JSON.parse(data)
-            const versions: AvailablePythonVersion[] = []
-            const seen = new Set<string>()
-
-            if (json.results && Array.isArray(json.results)) {
-              for (const release of json.results) {
-                // 解析版本号，如 "Python 3.13.1"
-                const match = release.name?.match(/Python (\d+\.\d+\.\d+)/)
-                if (match) {
-                  const version = match[1]
-                  // 只获取 Python 3.8+ 版本
-                  const majorMinor = version.split('.').slice(0, 2).map(Number)
-                  if (majorMinor[0] >= 3 && majorMinor[1] >= 8 && !seen.has(version)) {
-                    seen.add(version)
-                    versions.push({
-                      version,
-                      downloadUrl: `https://www.python.org/ftp/python/${version}/python-${version}-embed-amd64.zip`,
-                      type: 'embed'
-                    })
-                  }
-                }
-              }
-            }
-
-            // 按版本号排序（降序）
-            versions.sort((a, b) => {
-              const aParts = a.version.split('.').map(Number)
-              const bParts = b.version.split('.').map(Number)
-              for (let i = 0; i < 3; i++) {
-                if (aParts[i] !== bParts[i]) {
-                  return bParts[i] - aParts[i]
-                }
-              }
-              return 0
-            })
-
-            // 每个主版本只保留最新的一个
-            const latestByMajorMinor = new Map<string, AvailablePythonVersion>()
-            for (const v of versions) {
-              const majorMinor = v.version.split('.').slice(0, 2).join('.')
-              if (!latestByMajorMinor.has(majorMinor)) {
-                latestByMajorMinor.set(majorMinor, v)
-              }
-            }
-
-            resolve(Array.from(latestByMajorMinor.values()))
-          } catch (e) {
-            reject(e)
-          }
-        })
-      })
-
-      request.on('error', reject)
-      request.on('timeout', () => {
-        request.destroy()
-        reject(new Error('请求超时'))
-      })
-      request.end()
-    })
-  }
-
-  /**
-   * 备用版本列表
-   */
   private getFallbackVersions(): AvailablePythonVersion[] {
     return [
       {
-        version: '3.13.1',
-        downloadUrl: 'https://www.python.org/ftp/python/3.13.1/python-3.13.1-embed-amd64.zip',
+        version: '3.14.0',
+        downloadUrl: 'https://www.python.org/ftp/python/3.14.0/python-3.14.0-embed-amd64.zip',
         type: 'embed'
       },
       {
-        version: '3.12.8',
-        downloadUrl: 'https://www.python.org/ftp/python/3.12.8/python-3.12.8-embed-amd64.zip',
+        version: '3.13.15',
+        downloadUrl: 'https://www.python.org/ftp/python/3.13.15/python-3.13.15-embed-amd64.zip',
         type: 'embed'
       },
       {
-        version: '3.11.11',
-        downloadUrl: 'https://www.python.org/ftp/python/3.11.11/python-3.11.11-embed-amd64.zip',
-        type: 'embed'
-      },
-      {
-        version: '3.10.16',
-        downloadUrl: 'https://www.python.org/ftp/python/3.10.16/python-3.10.16-embed-amd64.zip',
-        type: 'embed'
-      },
-      {
-        version: '3.9.21',
-        downloadUrl: 'https://www.python.org/ftp/python/3.9.21/python-3.9.21-embed-amd64.zip',
+        version: '3.12.11',
+        downloadUrl: 'https://www.python.org/ftp/python/3.12.11/python-3.12.11-embed-amd64.zip',
         type: 'embed'
       }
     ]
@@ -701,7 +606,7 @@ export class PythonManager {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
       }, (response) => {
-        if (response.statusCode === 301 || response.statusCode === 302) {
+        if (response.statusCode === 301 || response.statusCode === 302 || response.statusCode === 303 || response.statusCode === 307 || response.statusCode === 308) {
           const redirectUrl = response.headers.location
           if (redirectUrl) {
             file.close()
@@ -773,16 +678,14 @@ export class PythonManager {
   }
 
   private async addToPath(pythonPath: string): Promise<void> {
-    try {
-      const scriptsPath = join(pythonPath, 'Scripts')
-      // 切换 Python 版本：按 …\python 前缀整体移除旧版本 PATH 后前置新版本目录与 Scripts。
-      const replacePrefix = this.getPythonBasePath()
-      const result = await this.pathManager.add([pythonPath, scriptsPath], replacePrefix)
-      if (!result.success) {
-        console.error('添加 Python 到 PATH 失败:', result.message)
-      }
-    } catch (error: any) {
-      console.error('添加 Python 到 PATH 失败:', error)
+    const scriptsPath = join(pythonPath, 'Scripts')
+    if (!existsSync(scriptsPath)) {
+      mkdirSync(scriptsPath, { recursive: true })
+    }
+    const replacePrefix = this.getPythonBasePath()
+    const result = await this.pathManager.add([pythonPath, scriptsPath], replacePrefix)
+    if (!result.success) {
+      throw new Error(`设置环境变量失败: ${result.message}`)
     }
   }
 

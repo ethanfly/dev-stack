@@ -37,8 +37,8 @@ exports.default = async function(context) {
       'version-string': {
         'ProductName': productName,
         'FileDescription': productName,
-        'CompanyName': 'PHPer',
-        'LegalCopyright': 'Copyright © 2024 PHPer',
+        'CompanyName': 'DevStack',
+        'LegalCopyright': 'Copyright © 2026 DevStack',
         'OriginalFilename': `${productName}.exe`,
         'InternalName': productName
       },

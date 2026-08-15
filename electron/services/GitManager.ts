@@ -8,6 +8,7 @@ import http from 'http'
 import { createWriteStream } from 'fs'
 import { sendDownloadProgress } from '../main'
 import { PathManager } from './PathManager'
+import { catalogGit } from './catalog'
 
 const execAsync = promisify(exec)
 
@@ -81,30 +82,9 @@ export class GitManager {
    * 获取可用的 Git 版本列表
    */
   async getAvailableVersions(): Promise<AvailableGitVersion[]> {
-    // Git for Windows 便携版下载地址
-    // https://github.com/git-for-windows/git/releases
-    const versions: AvailableGitVersion[] = [
-      {
-        version: '2.47.1',
-        downloadUrl: 'https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/PortableGit-2.47.1-64-bit.7z.exe',
-        type: 'portable'
-      },
-      {
-        version: '2.46.2',
-        downloadUrl: 'https://github.com/git-for-windows/git/releases/download/v2.46.2.windows.1/PortableGit-2.46.2-64-bit.7z.exe',
-        type: 'portable'
-      },
-      {
-        version: '2.45.2',
-        downloadUrl: 'https://github.com/git-for-windows/git/releases/download/v2.45.2.windows.1/PortableGit-2.45.2-64-bit.7z.exe',
-        type: 'portable'
-      }
-    ]
-
-    // 过滤掉已安装的版本
+    const versions = await catalogGit()
     const installed = await this.getInstalledVersions()
     const installedVersions = installed.map(v => v.version)
-
     return versions.filter(v => !installedVersions.includes(v.version))
   }
 
@@ -297,7 +277,7 @@ export class GitManager {
         }
       }, (response) => {
         // 处理重定向
-        if (response.statusCode === 301 || response.statusCode === 302) {
+        if (response.statusCode === 301 || response.statusCode === 302 || response.statusCode === 303 || response.statusCode === 307 || response.statusCode === 308) {
           const redirectUrl = response.headers.location
           if (redirectUrl) {
             file.close()
@@ -357,17 +337,19 @@ export class GitManager {
   }
 
   private async addToPath(): Promise<void> {
-    try {
-      const gitPath = this.getGitPath()
-      const cmdPath = join(gitPath, 'cmd')
-      const binPath = join(gitPath, 'bin')
-      // Git 只在本应用托管目录下有一份，重装/更新时按 …\git 前缀整体替换。
-      const result = await this.pathManager.add([cmdPath, binPath], gitPath)
-      if (!result.success) {
-        console.error('添加 Git 到 PATH 失败:', result.message)
-      }
-    } catch (error: any) {
-      console.error('添加 Git 到 PATH 失败:', error)
+    const gitPath = this.getGitPath()
+    const entries = PathManager.nonempty([
+      join(gitPath, 'cmd'),
+      join(gitPath, 'bin'),
+      join(gitPath, 'usr', 'bin'),
+      join(gitPath, 'mingw64', 'bin'),
+    ]).filter((p) => existsSync(p))
+    if (entries.length === 0) {
+      throw new Error('Git 安装目录不完整，找不到 cmd/bin')
+    }
+    const result = await this.pathManager.add(entries, gitPath)
+    if (!result.success) {
+      throw new Error(`设置环境变量失败: ${result.message}`)
     }
   }
 

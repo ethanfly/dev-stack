@@ -12,11 +12,17 @@ interface ConfigSchema {
   nodeVersions: string[];
   goVersions: string[];
   rustVersions: string[];
+  javaVersions: string[];
+  dotnetVersions: string[];
+  postgresVersions: string[];
+  mongoVersions: string[];
   activePhpVersion: string;
   activeNodeVersion: string;
   activeGoVersion: string;
   activePythonVersion: string;
   activeRustVersion: string;
+  activeJavaVersion: string;
+  activeDotnetVersion: string;
   // 活动版本若为系统安装的全局工具，记录其 exe 所在目录（托管的为空）。
   // 供 getActivePhpPath 等 helper 解析"当前活动工具路径"，避免 set 全局为默认后
   // 托管目录解析失败。
@@ -25,10 +31,14 @@ interface ConfigSchema {
   activeGoPath: string;
   activePythonPath: string;
   activeRustPath: string;
+  activeJavaPath: string;
+  activeDotnetPath: string;
   autoStart: {
     nginx: boolean;
     mysql: boolean;
     redis: boolean;
+    postgres: boolean;
+    mongodb: boolean;
   };
   sites: SiteConfig[];
   // 应用设置
@@ -55,7 +65,7 @@ export interface SiteConfig {
 function getDefaultBasePath(): string {
   if (app.isPackaged) {
     // 生产环境：使用与应用安装目录平级的 service 文件夹
-    // 例如：app 在 C:\DevTools\PHPer开发环境管理器\，service 在 C:\DevTools\service\
+    // 例如：app 在 C:\DevTools\DevStack\，service 在 C:\DevTools\service\
     const exePath = app.getPath("exe");
     const appDir = dirname(exePath);
     const parentDir = dirname(appDir);
@@ -81,20 +91,30 @@ export class ConfigStore {
         nodeVersions: [],
         goVersions: [],
         rustVersions: [],
+        javaVersions: [],
+        dotnetVersions: [],
+        postgresVersions: [],
+        mongoVersions: [],
         activePhpVersion: "",
         activeNodeVersion: "",
         activeGoVersion: "",
         activePythonVersion: "",
         activeRustVersion: "",
+        activeJavaVersion: "",
+        activeDotnetVersion: "",
         activePhpPath: "",
         activeNodePath: "",
         activeGoPath: "",
         activePythonPath: "",
         activeRustPath: "",
+        activeJavaPath: "",
+        activeDotnetPath: "",
         autoStart: {
           nginx: false,
           mysql: false,
           redis: false,
+          postgres: false,
+          mongodb: false,
         },
         sites: [],
         // 应用设置默认值
@@ -124,6 +144,10 @@ export class ConfigStore {
       join(this.basePath, "nodejs"),
       join(this.basePath, "go"),
       join(this.basePath, "rust"),
+      join(this.basePath, "java"),
+      join(this.basePath, "dotnet"),
+      join(this.basePath, "postgres"),
+      join(this.basePath, "mongodb"),
       join(this.basePath, "logs"),
       join(this.basePath, "temp"),
       join(this.basePath, "www"),
@@ -286,9 +310,9 @@ export class ConfigStore {
     const sites = this.store.get("sites");
     const index = sites.findIndex((s) => s.name === name);
     if (index > -1) {
-      // 如果传入完整对象则替换，否则合并
-      if (site.domain && site.rootPath) {
-        sites[index] = site as SiteConfig;
+      // 完整站点对象（PHP 有 rootPath，反向代理有 proxyTarget）则替换，否则合并
+      if (site.domain && (site.rootPath || site.isProxy)) {
+        sites[index] = { ...sites[index], ...site } as SiteConfig;
       } else {
         sites[index] = { ...sites[index], ...site };
       }

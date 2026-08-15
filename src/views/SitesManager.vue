@@ -5,7 +5,7 @@
         <span class="title-icon"><el-icon><Monitor /></el-icon></span>
         站点管理
       </h1>
-      <p class="page-description">创建和管理 Nginx 虚拟主机站点，支持 Laravel 项目和 SSL 证书</p>
+      <p class="page-description">创建和管理 Nginx 虚拟主机，支持 PHP、Laravel 与反向代理</p>
     </div>
 
     <!-- 站点列表 -->
@@ -105,8 +105,8 @@
               >
                 禁用
               </el-button>
-              <el-button size="small" @click="showSSLDialog(site)" v-if="!site.ssl">
-                申请SSL
+              <el-button size="small" @click="enableSsl(site)" v-if="!site.ssl" :loading="enablingSsl === site.name">
+                启用 HTTPS
               </el-button>
               <el-button 
                 type="danger" 
@@ -128,6 +128,14 @@
       width="600px"
     >
       <el-form :model="siteForm" label-width="100px">
+        <el-form-item label="站点类型" required>
+          <el-radio-group v-model="siteKind" @change="onSiteKindChange">
+            <el-radio-button label="php">PHP 站点</el-radio-button>
+            <el-radio-button label="laravel">Laravel</el-radio-button>
+            <el-radio-button label="proxy">反向代理</el-radio-button>
+          </el-radio-group>
+          <span class="form-hint">反向代理用于把域名转到本机 Node.js、Go、Vite 等端口</span>
+        </el-form-item>
         <el-form-item label="域名" required>
           <el-input v-model="siteForm.domain" placeholder="例如: myproject.test" @blur="autoFillName" />
         </el-form-item>
@@ -135,7 +143,7 @@
           <el-input v-model="siteForm.name" placeholder="留空则使用域名作为名称" />
           <span class="form-hint">可选，默认使用域名</span>
         </el-form-item>
-        <el-form-item label="根目录" required v-if="!siteForm.isProxy">
+        <el-form-item label="根目录" required v-if="siteKind !== 'proxy'">
           <div class="directory-input">
             <el-input v-model="siteForm.rootPath" placeholder="点击右侧按钮选择目录" readonly />
             <el-button type="primary" @click="selectDirectory" :icon="FolderOpened">
@@ -143,7 +151,7 @@
             </el-button>
           </div>
         </el-form-item>
-        <el-form-item label="PHP 版本" required v-if="!siteForm.isProxy">
+        <el-form-item label="PHP 版本" required v-if="siteKind !== 'proxy'">
           <el-select v-model="siteForm.phpVersion" placeholder="选择 PHP 版本">
             <el-option 
               v-for="v in phpVersions" 
@@ -154,21 +162,13 @@
           </el-select>
           <span class="form-hint">每个 PHP 版本使用独立端口的 FastCGI 进程</span>
         </el-form-item>
-        <el-form-item label="反向代理">
-          <el-switch v-model="siteForm.isProxy" @change="onProxyChange" />
-          <span class="form-hint">开启后将作为反向代理服务器（用于 Node.js、Go 等应用）</span>
-        </el-form-item>
-        <el-form-item label="代理目标" v-if="siteForm.isProxy" required>
-          <el-input v-model="siteForm.proxyTarget" placeholder="例如: http://127.0.0.1:3000" />
-          <span class="form-hint">后端服务地址，支持 WebSocket</span>
-        </el-form-item>
-        <el-form-item label="Laravel 项目" v-if="!siteForm.isProxy">
-          <el-switch v-model="siteForm.isLaravel" />
-          <span class="form-hint">开启后将自动配置 Laravel 伪静态规则</span>
+        <el-form-item label="代理目标" v-if="siteKind === 'proxy'" required>
+          <el-input v-model="siteForm.proxyTarget" placeholder="例如: http://127.0.0.1:3000 或 127.0.0.1:5173" />
+          <span class="form-hint">后端地址，可写端口或完整 URL；自动补全 http://，支持 WebSocket</span>
         </el-form-item>
         <el-form-item label="启用 SSL">
           <el-switch v-model="siteForm.ssl" />
-          <span class="form-hint">需要先申请 SSL 证书</span>
+          <span class="form-hint">自动生成本地 CA 证书并导入 Windows 受信任根证书，浏览器可直接打开 https</span>
         </el-form-item>
         <el-form-item label="添加 Hosts">
           <el-switch v-model="addToHosts" />
@@ -183,34 +183,6 @@
       </template>
     </el-dialog>
 
-    <!-- SSL 申请对话框 -->
-    <el-dialog 
-      v-model="showSSLDialogVisible" 
-      title="申请 SSL 证书"
-      width="500px"
-    >
-      <el-alert type="warning" :closable="false" class="mb-4">
-        <template #title>
-          Let's Encrypt 证书
-        </template>
-        需要确保域名已解析到本机，且 80 端口可访问。本地开发建议使用自签名证书。
-      </el-alert>
-      <el-form :model="sslForm" label-width="80px">
-        <el-form-item label="域名">
-          <el-input v-model="sslForm.domain" disabled />
-        </el-form-item>
-        <el-form-item label="邮箱" required>
-          <el-input v-model="sslForm.email" placeholder="用于接收证书到期通知" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="showSSLDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="requestSSL" :loading="requestingSSL">
-          申请证书
-        </el-button>
-      </template>
-    </el-dialog>
-
     <!-- 编辑站点对话框 -->
     <el-dialog 
       v-model="showEditSiteDialog" 
@@ -218,6 +190,13 @@
       width="600px"
     >
       <el-form :model="editForm" label-width="100px">
+        <el-form-item label="站点类型" required>
+          <el-radio-group v-model="editKind" @change="onEditKindChange">
+            <el-radio-button label="php">PHP 站点</el-radio-button>
+            <el-radio-button label="laravel">Laravel</el-radio-button>
+            <el-radio-button label="proxy">反向代理</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
         <el-form-item label="域名" required>
           <el-input v-model="editForm.domain" placeholder="例如: myproject.test" />
         </el-form-item>
@@ -225,15 +204,11 @@
           <el-input v-model="editForm.name" disabled />
           <span class="form-hint">站点名称不可修改</span>
         </el-form-item>
-        <el-form-item label="反向代理">
-          <el-switch v-model="editForm.isProxy" @change="onEditProxyChange" />
-          <span class="form-hint">开启后将作为反向代理服务器</span>
+        <el-form-item label="代理目标" v-if="editKind === 'proxy'" required>
+          <el-input v-model="editForm.proxyTarget" placeholder="例如: http://127.0.0.1:3000 或 127.0.0.1:5173" />
+          <span class="form-hint">后端地址，可写端口或完整 URL；自动补全 http://，支持 WebSocket</span>
         </el-form-item>
-        <el-form-item label="代理目标" v-if="editForm.isProxy" required>
-          <el-input v-model="editForm.proxyTarget" placeholder="例如: http://127.0.0.1:3000" />
-          <span class="form-hint">后端服务地址，支持 WebSocket</span>
-        </el-form-item>
-        <el-form-item label="根目录" required v-if="!editForm.isProxy">
+        <el-form-item label="根目录" required v-if="editKind !== 'proxy'">
           <div class="directory-input">
             <el-input v-model="editForm.rootPath" placeholder="点击右侧按钮选择目录" readonly />
             <el-button type="primary" @click="selectEditDirectory" :icon="FolderOpened">
@@ -241,7 +216,7 @@
             </el-button>
           </div>
         </el-form-item>
-        <el-form-item label="PHP 版本" required v-if="!editForm.isProxy">
+        <el-form-item label="PHP 版本" required v-if="editKind !== 'proxy'">
           <el-select v-model="editForm.phpVersion" placeholder="选择 PHP 版本">
             <el-option 
               v-for="v in phpVersions" 
@@ -252,13 +227,9 @@
           </el-select>
           <span class="form-hint">修改后需重新加载 Nginx 配置</span>
         </el-form-item>
-        <el-form-item label="Laravel 项目" v-if="!editForm.isProxy">
-          <el-switch v-model="editForm.isLaravel" />
-          <span class="form-hint">开启后将自动配置 Laravel 伪静态规则</span>
-        </el-form-item>
         <el-form-item label="启用 SSL">
           <el-switch v-model="editForm.ssl" />
-          <span class="form-hint">需要先申请 SSL 证书</span>
+          <span class="form-hint">打开后保存即生成本地证书并写入本机受信任根证书</span>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -370,6 +341,8 @@ const phpVersions = ref<any[]>([])
 const showAddSiteDialog = ref(false)
 const adding = ref(false)
 const addToHosts = ref(true)
+const siteKind = ref<'php' | 'laravel' | 'proxy'>('php')
+const editKind = ref<'php' | 'laravel' | 'proxy'>('php')
 
 // 根据 PHP 版本计算 FastCGI 端口
 const getPhpCgiPort = (version: string): number => {
@@ -394,12 +367,7 @@ const siteForm = reactive<SiteConfig>({
   proxyTarget: ''
 })
 
-const showSSLDialogVisible = ref(false)
-const sslForm = reactive({
-  domain: '',
-  email: ''
-})
-const requestingSSL = ref(false)
+const enablingSsl = ref('')
 
 // 编辑站点
 const showEditSiteDialog = ref(false)
@@ -465,29 +433,27 @@ const selectDirectory = async () => {
   }
 }
 
-// 反向代理开关变化
-const onProxyChange = (value: boolean) => {
-  if (value) {
-    // 开启反向代理时，清空不需要的字段
-    siteForm.rootPath = ''
-    siteForm.phpVersion = ''
-    siteForm.isLaravel = false
-    // 设置默认代理目标
-    if (!siteForm.proxyTarget) {
-      siteForm.proxyTarget = 'http://127.0.0.1:3000'
+const applySiteKind = (
+  kind: 'php' | 'laravel' | 'proxy',
+  form: SiteConfig
+) => {
+  form.isProxy = kind === 'proxy'
+  form.isLaravel = kind === 'laravel'
+  if (kind === 'proxy') {
+    form.rootPath = ''
+    form.phpVersion = ''
+    if (!form.proxyTarget) {
+      form.proxyTarget = 'http://127.0.0.1:3000'
     }
   }
 }
 
-const onEditProxyChange = (value: boolean) => {
-  if (value) {
-    editForm.rootPath = ''
-    editForm.phpVersion = ''
-    editForm.isLaravel = false
-    if (!editForm.proxyTarget) {
-      editForm.proxyTarget = 'http://127.0.0.1:3000'
-    }
-  }
+const onSiteKindChange = (kind: 'php' | 'laravel' | 'proxy') => {
+  applySiteKind(kind, siteForm)
+}
+
+const onEditKindChange = (kind: 'php' | 'laravel' | 'proxy') => {
+  applySiteKind(kind, editForm)
 }
 
 // 自动填充站点名称（当域名输入完成后）
@@ -558,6 +524,7 @@ const addSite = async () => {
         isProxy: false,
         proxyTarget: ''
       })
+      siteKind.value = 'php'
       
       // 重新加载 Nginx 配置
       await window.electronAPI?.nginx.reload()
@@ -651,6 +618,7 @@ const showEditDialog = (site: SiteConfig) => {
     isProxy: site.isProxy || false,
     proxyTarget: site.proxyTarget || ''
   })
+  editKind.value = site.isProxy ? 'proxy' : site.isLaravel ? 'laravel' : 'php'
   showEditSiteDialog.value = true
 }
 
@@ -721,32 +689,21 @@ const updateSite = async () => {
   }
 }
 
-const showSSLDialog = (site: SiteConfig) => {
-  sslForm.domain = site.domain
-  sslForm.email = ''
-  showSSLDialogVisible.value = true
-}
-
-const requestSSL = async () => {
-  if (!sslForm.email) {
-    ElMessage.warning('请输入邮箱地址')
-    return
-  }
-  
-  requestingSSL.value = true
+const enableSsl = async (site: SiteConfig) => {
+  enablingSsl.value = site.name
   try {
-    const result = await window.electronAPI?.nginx.requestSSL(sslForm.domain, sslForm.email)
+    const result = await window.electronAPI?.nginx.requestSSL(site.domain)
     if (result?.success) {
       ElMessage.success(result.message)
-      showSSLDialogVisible.value = false
+      await window.electronAPI?.nginx.reload()
       await loadData()
     } else {
-      ElMessage.error(result?.message || '申请失败')
+      ElMessage.error(result?.message || '启用 HTTPS 失败')
     }
   } catch (error: any) {
     ElMessage.error(error.message)
   } finally {
-    requestingSSL.value = false
+    enablingSsl.value = ''
   }
 }
 
@@ -882,45 +839,44 @@ onMounted(() => {
 }
 
 .sites-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
-  gap: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .site-card {
-  background: var(--bg-input);
+  background: var(--bg-card);
   border: 1px solid var(--border-color);
-  border-radius: 12px;
-  padding: 20px;
-  transition: all 0.2s;
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  transition: background 0.15s;
   
   &:hover {
-    border-color: var(--accent-light);
-    box-shadow: var(--shadow-sm);
+    background: var(--bg-hover);
   }
   
   &.enabled {
-    border-color: var(--success-color);
+    background: var(--select-fill);
   }
   
   .site-header {
     display: flex;
     align-items: center;
-    gap: 16px;
-    margin-bottom: 16px;
+    gap: 12px;
+    margin-bottom: 10px;
   }
   
   .site-icon {
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
     border-radius: var(--radius-md);
-    background: var(--accent-bg);
-    border: 1px solid var(--accent-border);
+    background: var(--bg-input);
+    border: none;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--accent-color);
-    font-size: 20px;
+    color: var(--text-secondary);
+    font-size: 18px;
   }
   
   .site-main {
@@ -963,15 +919,16 @@ onMounted(() => {
   
   .site-tags {
     display: flex;
-    gap: 8px;
-    margin-bottom: 16px;
+    gap: 6px;
+    margin-bottom: 10px;
   }
   
   .site-actions {
     display: flex;
-    gap: 8px;
+    flex-wrap: wrap;
+    gap: 6px;
     border-top: 1px solid var(--border-light);
-    padding-top: 16px;
+    padding-top: 10px;
   }
 }
 

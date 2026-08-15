@@ -76,6 +76,30 @@ const router = createRouter({
       meta: { title: "Rust 管理" },
     },
     {
+      path: "/java",
+      name: "java",
+      component: () => import("@/views/JavaManager.vue"),
+      meta: { title: "Java 管理" },
+    },
+    {
+      path: "/dotnet",
+      name: "dotnet",
+      component: () => import("@/views/DotnetManager.vue"),
+      meta: { title: ".NET 管理" },
+    },
+    {
+      path: "/postgres",
+      name: "postgres",
+      component: () => import("@/views/PostgresManager.vue"),
+      meta: { title: "PostgreSQL 管理" },
+    },
+    {
+      path: "/mongodb",
+      name: "mongodb",
+      component: () => import("@/views/MongoManager.vue"),
+      meta: { title: "MongoDB 管理" },
+    },
+    {
       path: "/settings",
       name: "settings",
       component: () => import("@/views/Settings.vue"),

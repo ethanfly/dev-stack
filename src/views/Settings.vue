@@ -20,7 +20,7 @@
         <div class="setting-item">
           <div class="setting-info">
             <h4 class="setting-title">开机自动启动</h4>
-            <p class="setting-description">Windows 启动时自动运行 PHPer 开发环境管理器</p>
+            <p class="setting-description">Windows 启动时自动运行 {{ APP_NAME }}</p>
           </div>
           <div class="setting-action">
             <el-switch 
@@ -54,13 +54,13 @@
         </span>
       </div>
       <div class="card-content">
-        <div class="setting-item">
+        <div class="setting-item path-row">
           <div class="setting-info">
             <h4 class="setting-title">安装目录</h4>
-            <p class="setting-description">PHP、MySQL、Nginx、Redis 等服务的安装目录</p>
+            <p class="setting-description">运行时、后台服务与工具链的安装目录</p>
           </div>
           <div class="setting-action">
-            <el-input v-model="basePath" style="width: 400px" disabled />
+            <el-input v-model="basePath" class="path-input" disabled />
             <el-button @click="openBasePath">
               <el-icon><FolderOpened /></el-icon>
               打开
@@ -107,10 +107,10 @@
         <div class="about-section">
           <div class="app-info">
             <div class="app-logo-large">
-              <img src="/icon.svg" alt="logo" />
+              <img src="/icon.png" alt="logo" />
             </div>
             <div class="app-details">
-              <h2 class="app-title">PHPer 开发环境管理器</h2>
+              <h2 class="app-title">{{ APP_NAME }}</h2>
               <p class="app-version">
                 版本 {{ appVersion.version }}
                 <span v-if="appVersion.buildDate" class="build-date">
@@ -118,9 +118,7 @@
                 </span>
                 <el-tag v-if="!appVersion.isPackaged" type="warning" size="small" style="margin-left: 8px">开发版</el-tag>
               </p>
-              <p class="app-desc">
-                一站式 PHP 开发环境管理工具，支持 PHP、MySQL、Nginx、Redis、Node.js 的安装和管理。
-              </p>
+              <p class="app-desc">{{ APP_TAGLINE }}。管理 PHP、Node.js、Go、Python、Rust、Git 以及 MySQL、Nginx、Redis 等本机依赖。</p>
             </div>
           </div>
           <div class="about-links">
@@ -139,6 +137,18 @@
             <el-button @click="openLink('https://nodejs.org/')">
               Node.js 官网
             </el-button>
+            <el-button @click="openLink('https://go.dev/dl/')">
+              Go 官网
+            </el-button>
+            <el-button @click="openLink('https://www.python.org/')">
+              Python 官网
+            </el-button>
+            <el-button @click="openLink('https://www.rust-lang.org/')">
+              Rust 官网
+            </el-button>
+            <el-button @click="openLink('https://git-scm.com/')">
+              Git 官网
+            </el-button>
           </div>
         </div>
       </div>
@@ -150,6 +160,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Monitor } from '@element-plus/icons-vue'
+import { APP_NAME, APP_TAGLINE } from '@/brand'
 
 // 定义组件名称以便 KeepAlive 正确缓存
 defineOptions({
@@ -284,7 +295,8 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 0;
+  gap: 16px;
+  padding: 16px 0;
   border-bottom: 1px solid var(--border-light);
   
   &:last-child {
@@ -292,6 +304,9 @@ onMounted(() => {
   }
   
   .setting-info {
+    flex: 1;
+    min-width: 0;
+
     .setting-title {
       font-size: 15px;
       font-weight: 600;
@@ -308,6 +323,26 @@ onMounted(() => {
     display: flex;
     align-items: center;
     gap: 12px;
+    flex-shrink: 0;
+  }
+
+  &.path-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+
+    .setting-info {
+      flex: none;
+    }
+
+    .setting-action {
+      width: 100%;
+
+      .path-input {
+        flex: 1;
+        min-width: 0;
+      }
+    }
   }
 }
 

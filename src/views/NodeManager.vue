@@ -326,30 +326,28 @@ onUnmounted(() => {
 
 <style lang="scss" scoped>
 .version-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .version-card {
-  background: var(--bg-input);
+  background: var(--bg-card);
   border: 1px solid var(--border-color);
-  border-radius: 16px;
-  padding: 24px;
-  transition: all 0.3s;
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  transition: background 0.15s;
   display: flex;
-  flex-direction: column;
-  gap: 20px;
+  flex-direction: row;
+  align-items: center;
+  gap: 16px;
   
   &:hover {
-    border-color: var(--accent-color);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-    transform: translateY(-2px);
+    background: var(--bg-hover);
   }
   
   &.active {
-    border-color: var(--accent-border);
-    background: var(--accent-bg);
+    background: var(--select-fill);
   }
   
   .version-main {
@@ -359,17 +357,17 @@ onUnmounted(() => {
   }
   
   .version-icon {
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
     border-radius: var(--radius-md);
-    background: var(--accent-bg);
-    border: 1px solid var(--accent-border);
+    background: var(--bg-input);
+    border: none;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--accent-color);
+    color: var(--text-secondary);
     flex-shrink: 0;
-    font-size: 20px;
+    font-size: 18px;
   }
   
   .version-content {
@@ -386,10 +384,10 @@ onUnmounted(() => {
   }
   
   .version-number {
-    font-size: 20px;
-    font-weight: 700;
+    font-size: 15px;
+    font-weight: 600;
     color: var(--text-primary);
-    letter-spacing: -0.5px;
+    letter-spacing: -0.2px;
   }
   
   .version-meta {
@@ -425,13 +423,9 @@ onUnmounted(() => {
 
   .version-actions {
     display: flex;
-    gap: 10px;
-    padding-top: 4px;
-    border-top: 1px solid var(--border-color);
-    
-    .el-button {
-      flex: 1;
-    }
+    gap: 8px;
+    margin-left: auto;
+    flex-shrink: 0;
   }
 }
 

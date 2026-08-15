@@ -13,6 +13,8 @@ interface ServiceStatus {
   nginx: boolean
   mysql: boolean
   redis: boolean
+  postgres: boolean
+  mongodb: boolean
   phpCgi: PhpCgiStatus[]
 }
 
@@ -47,6 +49,8 @@ export const useServiceStore = defineStore('service', () => {
     nginx: false,
     mysql: false,
     redis: false,
+    postgres: false,
+    mongodb: false,
     phpCgi: []
   })
 
@@ -85,6 +89,8 @@ export const useServiceStore = defineStore('service', () => {
     if (serviceStatus.value.nginx) count++
     if (serviceStatus.value.mysql) count++
     if (serviceStatus.value.redis) count++
+    if (serviceStatus.value.postgres) count++
+    if (serviceStatus.value.mongodb) count++
     count += serviceStatus.value.phpCgi.filter(p => p.running).length
     return count
   })
@@ -126,17 +132,22 @@ export const useServiceStore = defineStore('service', () => {
       if (allServices) {
         // 重置 MySQL 状态为 false，然后检测是否有任一版本在运行
         serviceStatus.value.mysql = false
+        serviceStatus.value.postgres = false
+        serviceStatus.value.mongodb = false
         
         for (const svc of allServices) {
           if (svc.name === 'nginx') {
             serviceStatus.value.nginx = svc.running
           } else if (svc.name.startsWith('mysql-')) {
-            // MySQL 服务名称格式为 mysql-{version}，只要有一个版本在运行就设为 true
             if (svc.running) {
               serviceStatus.value.mysql = true
             }
           } else if (svc.name === 'redis') {
             serviceStatus.value.redis = svc.running
+          } else if (svc.name === 'postgres') {
+            serviceStatus.value.postgres = svc.running
+          } else if (svc.name === 'mongodb') {
+            serviceStatus.value.mongodb = svc.running
           }
         }
       }
@@ -200,7 +211,7 @@ export const useServiceStore = defineStore('service', () => {
   }
 
   // 更新单个服务状态
-  function updateServiceStatus(service: 'nginx' | 'mysql' | 'redis', running: boolean) {
+  function updateServiceStatus(service: 'nginx' | 'mysql' | 'redis' | 'postgres' | 'mongodb', running: boolean) {
     serviceStatus.value[service] = running
   }
 

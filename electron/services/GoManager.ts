@@ -16,6 +16,7 @@ import { createWriteStream } from "fs";
 import unzipper from "unzipper";
 import { sendDownloadProgress } from "../main";
 import { PathManager } from "./PathManager";
+import { catalogGo } from "./catalog";
 
 const execAsync = promisify(exec);
 
@@ -147,7 +148,7 @@ export class GoManager {
     }
 
     try {
-      const versions = await this.fetchVersionsFromGoDev();
+      const versions = await catalogGo();
       if (versions.length > 0) {
         this.versionsCache = versions;
         this.cacheTime = Date.now();
@@ -158,57 +159,6 @@ export class GoManager {
     }
 
     return this.getFallbackVersions();
-  }
-
-  /**
-   * 从 go.dev/dl API 获取版本列表
-   */
-  private async fetchVersionsFromGoDev(): Promise<AvailableGoVersion[]> {
-    return new Promise((resolve, reject) => {
-      const url = "https://go.dev/dl/?mode=json";
-
-      https
-        .get(
-          url,
-          {
-            headers: { "User-Agent": "PHPer-Dev-Manager/1.0" },
-            timeout: 30000,
-          },
-          (res) => {
-            let data = "";
-            res.on("data", (chunk) => (data += chunk));
-            res.on("end", () => {
-              try {
-                const releases = JSON.parse(data);
-                const versions: AvailableGoVersion[] = [];
-
-                for (const rel of releases) {
-                  const winZip = rel.files?.find(
-                    (f: any) =>
-                      f.os === "windows" &&
-                      f.arch === "amd64" &&
-                      f.filename?.endsWith(".zip"),
-                  );
-                  if (winZip) {
-                    versions.push({
-                      version: rel.version,
-                      stable: rel.stable ?? true,
-                      downloadUrl: `https://go.dev/dl/${winZip.filename}`,
-                      filename: winZip.filename,
-                    });
-                  }
-                }
-
-                resolve(versions.slice(0, 30));
-              } catch (e) {
-                reject(e);
-              }
-            });
-          },
-        )
-        .on("error", reject)
-        .on("timeout", () => reject(new Error("Request timeout")));
-    });
   }
 
   /**
@@ -366,8 +316,15 @@ export class GoManager {
       } catch {}
 
       const binPath = join(goRoot, "bin");
+      const goUserBin = join(process.env.USERPROFILE || "", "go", "bin");
+      if (goUserBin && !existsSync(goUserBin)) {
+        mkdirSync(goUserBin, { recursive: true });
+      }
       const replacePrefix = this.configStore.getGoPath();
-      const result = await this.pathManager.add([binPath], replacePrefix);
+      const result = await this.pathManager.add(
+        PathManager.nonempty([binPath, goUserBin]),
+        replacePrefix,
+      );
       if (!result.success) {
         return { success: false, message: `设置环境变量失败: ${result.message}` };
       }
@@ -461,7 +418,7 @@ export class GoManager {
           timeout: 600000,
         },
         (response) => {
-          if (response.statusCode === 301 || response.statusCode === 302) {
+          if (response.statusCode === 301 || response.statusCode === 302 || response.statusCode === 303 || response.statusCode === 307 || response.statusCode === 308) {
             const redirectUrl = response.headers.location;
             if (redirectUrl) {
               this.downloadFile(redirectUrl, dest, name)
@@ -533,15 +490,17 @@ export class GoManager {
 
   private async addToPath(goPath: string): Promise<void> {
     const binPath = join(goPath, "bin");
-    try {
-      // 切换 Go 版本：按 …\go 前缀整体移除旧版本 PATH 后前置新版本 bin。
-      const replacePrefix = this.configStore.getGoPath();
-      const result = await this.pathManager.add([binPath], replacePrefix);
-      if (!result.success) {
-        console.error("更新 Go PATH 失败:", result.message);
-      }
-    } catch (error: any) {
-      console.error("更新 Go PATH 失败:", error);
+    const goUserBin = join(process.env.USERPROFILE || "", "go", "bin");
+    if (goUserBin && !existsSync(goUserBin)) {
+      mkdirSync(goUserBin, { recursive: true });
+    }
+    const replacePrefix = this.configStore.getGoPath();
+    const result = await this.pathManager.add(
+      PathManager.nonempty([binPath, goUserBin]),
+      replacePrefix,
+    );
+    if (!result.success) {
+      throw new Error(`设置环境变量失败: ${result.message}`);
     }
   }
 
@@ -560,28 +519,16 @@ export class GoManager {
   private getFallbackVersions(): AvailableGoVersion[] {
     return [
       {
-        version: "go1.25.7",
+        version: "go1.26.6",
         stable: true,
-        downloadUrl: "https://go.dev/dl/go1.25.7.windows-amd64.zip",
-        filename: "go1.25.7.windows-amd64.zip",
+        downloadUrl: "https://go.dev/dl/go1.26.6.windows-amd64.zip",
+        filename: "go1.26.6.windows-amd64.zip",
       },
       {
-        version: "go1.24.13",
+        version: "go1.25.13",
         stable: true,
-        downloadUrl: "https://go.dev/dl/go1.24.13.windows-amd64.zip",
-        filename: "go1.24.13.windows-amd64.zip",
-      },
-      {
-        version: "go1.23.5",
-        stable: true,
-        downloadUrl: "https://go.dev/dl/go1.23.5.windows-amd64.zip",
-        filename: "go1.23.5.windows-amd64.zip",
-      },
-      {
-        version: "go1.22.14",
-        stable: true,
-        downloadUrl: "https://go.dev/dl/go1.22.14.windows-amd64.zip",
-        filename: "go1.22.14.windows-amd64.zip",
+        downloadUrl: "https://go.dev/dl/go1.25.13.windows-amd64.zip",
+        filename: "go1.25.13.windows-amd64.zip",
       },
     ];
   }

@@ -58,6 +58,26 @@ export class ServiceManager {
       }
     }
 
+    const postgresPath = join(this.configStore.getBasePath(), 'postgres')
+    if (existsSync(join(postgresPath, 'bin', 'postgres.exe'))) {
+      services.push({
+        name: 'postgres',
+        displayName: 'PostgreSQL',
+        running: await this.checkProcess('postgres.exe'),
+        autoStart: this.checkAutoStart('postgres'),
+      })
+    }
+
+    const mongoPath = join(this.configStore.getBasePath(), 'mongodb')
+    if (existsSync(join(mongoPath, 'bin', 'mongod.exe'))) {
+      services.push({
+        name: 'mongodb',
+        displayName: 'MongoDB',
+        running: await this.checkProcess('mongod.exe'),
+        autoStart: this.checkAutoStart('mongodb'),
+      })
+    }
+
     // 检查 Redis
     const redisPath = this.configStore.getRedisPath()
     if (existsSync(join(redisPath, 'redis-server.exe'))) {
@@ -294,6 +314,35 @@ export class ServiceManager {
         }
       }
 
+      const postgresBin = join(this.configStore.getBasePath(), 'postgres', 'bin', 'pg_ctl.exe')
+      if (existsSync(postgresBin) && !(await this.checkProcess('postgres.exe'))) {
+        const dataDir = join(this.configStore.getBasePath(), 'postgres', 'data')
+        const logFile = join(this.configStore.getLogsPath(), 'postgres.log')
+        try {
+          await execAsync(`"${postgresBin}" -D "${dataDir}" -l "${logFile}" start`, {
+            windowsHide: true,
+            timeout: 20000,
+          })
+          details.push('PostgreSQL 已启动')
+        } catch (e: any) {
+          details.push(`PostgreSQL 启动失败: ${e.message}`)
+        }
+      }
+
+      const mongod = join(this.configStore.getBasePath(), 'mongodb', 'bin', 'mongod.exe')
+      if (existsSync(mongod) && !(await this.checkProcess('mongod.exe'))) {
+        const mongoDir = join(this.configStore.getBasePath(), 'mongodb')
+        const dataDir = join(mongoDir, 'data')
+        if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true })
+        await this.startProcess(mongod, [
+          '--dbpath', dataDir,
+          '--bind_ip', '127.0.0.1',
+          '--port', '27017',
+          '--logpath', join(this.configStore.getLogsPath(), 'mongodb.log'),
+        ], mongoDir)
+        details.push('MongoDB 已启动')
+      }
+
       // 启动所有已安装 PHP 版本的 CGI 进程
       const phpVersions = this.configStore.get('phpVersions')
       for (const version of phpVersions) {
@@ -365,6 +414,26 @@ export class ServiceManager {
           await execAsync('taskkill /F /IM redis-server.exe', { timeout: 5000 }).catch(() => { })
         }
         details.push('Redis 已停止')
+      }
+
+      if (await this.checkProcess('postgres.exe')) {
+        const pgCtl = join(this.configStore.getBasePath(), 'postgres', 'bin', 'pg_ctl.exe')
+        const dataDir = join(this.configStore.getBasePath(), 'postgres', 'data')
+        if (existsSync(pgCtl)) {
+          try {
+            await execAsync(`"${pgCtl}" -D "${dataDir}" stop -m fast`, { timeout: 15000, windowsHide: true })
+          } catch {
+            await execAsync('taskkill /F /IM postgres.exe', { timeout: 5000 }).catch(() => {})
+          }
+        } else {
+          await execAsync('taskkill /F /IM postgres.exe', { timeout: 5000 }).catch(() => {})
+        }
+        details.push('PostgreSQL 已停止')
+      }
+
+      if (await this.checkProcess('mongod.exe')) {
+        await execAsync('taskkill /F /IM mongod.exe', { timeout: 5000 }).catch(() => {})
+        details.push('MongoDB 已停止')
       }
 
       return { success: true, message: '所有服务已停止', details }

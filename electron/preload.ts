@@ -158,7 +158,7 @@ const api = {
       ipcRenderer.invoke("nginx:disableSite", name),
     generateLaravelConfig: (site: any) =>
       ipcRenderer.invoke("nginx:generateLaravelConfig", site),
-    requestSSL: (domain: string, email: string) =>
+    requestSSL: (domain: string, email?: string) =>
       ipcRenderer.invoke("nginx:requestSSL", domain, email),
   },
 
@@ -244,12 +244,67 @@ const api = {
       ipcRenderer.invoke("python:installPackage", version, packageName),
   },
 
+  java: {
+    getVersions: () => ipcRenderer.invoke("java:getVersions"),
+    getAvailableVersions: () => ipcRenderer.invoke("java:getAvailableVersions"),
+    install: (version: string, downloadUrl: string) =>
+      ipcRenderer.invoke("java:install", version, downloadUrl),
+    uninstall: (version: string) => ipcRenderer.invoke("java:uninstall", version),
+    setActive: (version: string) => ipcRenderer.invoke("java:setActive", version),
+    setActiveSystem: (path: string) =>
+      ipcRenderer.invoke("java:setActiveSystem", path),
+    uninstallSystem: (path: string) =>
+      ipcRenderer.invoke("java:uninstallSystem", path),
+  },
+
+  dotnet: {
+    getVersions: () => ipcRenderer.invoke("dotnet:getVersions"),
+    getAvailableVersions: () =>
+      ipcRenderer.invoke("dotnet:getAvailableVersions"),
+    install: (version: string, downloadUrl: string) =>
+      ipcRenderer.invoke("dotnet:install", version, downloadUrl),
+    uninstall: (version: string) =>
+      ipcRenderer.invoke("dotnet:uninstall", version),
+    setActive: (version: string) =>
+      ipcRenderer.invoke("dotnet:setActive", version),
+    setActiveSystem: (path: string) =>
+      ipcRenderer.invoke("dotnet:setActiveSystem", path),
+    uninstallSystem: (path: string) =>
+      ipcRenderer.invoke("dotnet:uninstallSystem", path),
+  },
+
+  postgres: {
+    getVersions: () => ipcRenderer.invoke("postgres:getVersions"),
+    getAvailableVersions: () =>
+      ipcRenderer.invoke("postgres:getAvailableVersions"),
+    install: (version: string) => ipcRenderer.invoke("postgres:install", version),
+    uninstall: () => ipcRenderer.invoke("postgres:uninstall"),
+    start: () => ipcRenderer.invoke("postgres:start"),
+    stop: () => ipcRenderer.invoke("postgres:stop"),
+    restart: () => ipcRenderer.invoke("postgres:restart"),
+    getStatus: () => ipcRenderer.invoke("postgres:getStatus"),
+  },
+
+  mongodb: {
+    getVersions: () => ipcRenderer.invoke("mongodb:getVersions"),
+    getAvailableVersions: () =>
+      ipcRenderer.invoke("mongodb:getAvailableVersions"),
+    install: (version: string) => ipcRenderer.invoke("mongodb:install", version),
+    uninstall: () => ipcRenderer.invoke("mongodb:uninstall"),
+    start: () => ipcRenderer.invoke("mongodb:start"),
+    stop: () => ipcRenderer.invoke("mongodb:stop"),
+    restart: () => ipcRenderer.invoke("mongodb:restart"),
+    getStatus: () => ipcRenderer.invoke("mongodb:getStatus"),
+  },
+
   // Rust 管理
   rust: {
     getVersions: () => ipcRenderer.invoke("rust:getVersions"),
     getAvailableVersions: () =>
       ipcRenderer.invoke("rust:getAvailableVersions"),
     install: (name: string) => ipcRenderer.invoke("rust:install", name),
+    installRustup: (toolchain?: string) =>
+      ipcRenderer.invoke("rust:installRustup", toolchain),
     uninstall: (name: string) => ipcRenderer.invoke("rust:uninstall", name),
     setActive: (name: string) => ipcRenderer.invoke("rust:setActive", name),
     update: () => ipcRenderer.invoke("rust:update"),

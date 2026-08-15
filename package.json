@@ -1,7 +1,7 @@
 {
   "name": "phper-dev-manager",
   "version": "1.0.41",
-  "description": "PHP开发环境管理器 - 管理PHP、MySQL、Nginx、Redis服务",
+  "description": "DevStack — 本机全局开发运行时与服务依赖管理",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
@@ -14,9 +14,10 @@
     "preview": "vite preview",
     "electron:dev": "vite",
     "electron:build": "node scripts/bump-version.js && vite build && electron-builder",
-    "typecheck": "vue-tsc --noEmit"
+    "typecheck": "vue-tsc --noEmit",
+    "test": "node --test --experimental-strip-types tests/identity.test.ts tests/catalog.test.ts"
   },
-  "author": "PHPer",
+  "author": "DevStack",
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^20.10.0",
@@ -47,8 +48,8 @@
   },
   "build": {
     "appId": "com.phper.devmanager",
-    "productName": "PHPer开发环境管理器",
-    "copyright": "Copyright © 2024 PHPer",
+    "productName": "DevStack",
+    "copyright": "Copyright © 2026 DevStack",
     "icon": "build/icon.ico",
     "afterPack": "./build/afterPack.js",
     "directories": {
@@ -75,7 +76,7 @@
         }
       ],
       "icon": "build/icon.ico",
-      "executableName": "PHPer开发环境管理器",
+      "executableName": "DevStack",
       "requestedExecutionLevel": "requireAdministrator",
       "signAndEditExecutable": true
     },
@@ -86,7 +87,7 @@
       "allowElevation": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "PHPer开发环境管理器",
+      "shortcutName": "DevStack",
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
       "installerLanguages": [
