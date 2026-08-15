@@ -1,6 +1,6 @@
 {
   "name": "phper-dev-manager",
-  "version": "1.0.41",
+  "version": "1.0.42",
   "description": "DevStack — 本机全局开发运行时与服务依赖管理",
   "main": "dist-electron/main.js",
   "scripts": {
