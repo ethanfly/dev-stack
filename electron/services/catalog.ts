@@ -53,7 +53,8 @@ export function parsePhpReleasesJson(json: Record<string, any>): CatalogPhpVersi
   for (const info of Object.values(json || {})) {
     if (!info || typeof info !== "object") continue;
     const version = String((info as any).version || "");
-    if (!/^\d+\.\d+\.\d+$/.test(version)) continue;
+    // 允许打包修订后缀，如 8.4.27-1（官方 Windows 包 repack 时会出现）
+    if (!/^\d+\.\d+\.\d+(?:-\d+)?$/.test(version)) continue;
 
     const keys = Object.keys(info as object);
     const ntsKey = keys.find((k) => /^nts-v[sc]\d+-x64$/i.test(k));
@@ -79,6 +80,7 @@ export function parsePhpReleasesJson(json: Record<string, any>): CatalogPhpVersi
       });
     }
   }
+  // 同版本时保持插入顺序：nts 在前，ts 在后
   return sortSemverDesc(versions, (v) => v.version.replace(/-ts$/, ""));
 }
 
@@ -86,7 +88,7 @@ export function parsePhpReleasesHtml(html: string): CatalogPhpVersion[] {
   const versions: CatalogPhpVersion[] = [];
   const seen = new Set<string>();
 
-  const ntsRegex = /php-(\d+\.\d+\.\d+)-nts-Win32-vs(\d+)-x64\.zip/g;
+  const ntsRegex = /php-(\d+\.\d+\.\d+(?:-\d+)?)-nts-Win32-vs(\d+)-x64\.zip/g;
   let match: RegExpExecArray | null;
   while ((match = ntsRegex.exec(html)) !== null) {
     const version = match[1];
@@ -101,7 +103,7 @@ export function parsePhpReleasesHtml(html: string): CatalogPhpVersion[] {
     });
   }
 
-  const tsRegex = /php-(\d+\.\d+\.\d+)-Win32-vs(\d+)-x64\.zip/g;
+  const tsRegex = /php-(\d+\.\d+\.\d+(?:-\d+)?)-Win32-vs(\d+)-x64\.zip/g;
   while ((match = tsRegex.exec(html)) !== null) {
     if (match[0].includes("-nts-")) continue;
     const version = match[1];
@@ -116,25 +118,26 @@ export function parsePhpReleasesHtml(html: string): CatalogPhpVersion[] {
     });
   }
 
+  // 同版本时保持插入顺序：nts 在前，ts 在后
   return sortSemverDesc(versions, (v) => v.version.replace(/-ts$/, ""));
 }
 
 export function fallbackPhp(): CatalogPhpVersion[] {
   return parsePhpReleasesJson({
     "8.5": {
-      version: "8.5.9",
-      "nts-vs17-x64": { zip: { path: "php-8.5.9-nts-Win32-vs17-x64.zip" } },
-      "ts-vs17-x64": { zip: { path: "php-8.5.9-Win32-vs17-x64.zip" } },
+      version: "8.5.12-1",
+      "nts-vs17-x64": { zip: { path: "php-8.5.12-1-nts-Win32-vs17-x64.zip" } },
+      "ts-vs17-x64": { zip: { path: "php-8.5.12-1-Win32-vs17-x64.zip" } },
     },
     "8.4": {
-      version: "8.4.24",
-      "nts-vs17-x64": { zip: { path: "php-8.4.24-nts-Win32-vs17-x64.zip" } },
-      "ts-vs17-x64": { zip: { path: "php-8.4.24-Win32-vs17-x64.zip" } },
+      version: "8.4.27-1",
+      "nts-vs17-x64": { zip: { path: "php-8.4.27-1-nts-Win32-vs17-x64.zip" } },
+      "ts-vs17-x64": { zip: { path: "php-8.4.27-1-Win32-vs17-x64.zip" } },
     },
     "8.3": {
-      version: "8.3.33",
-      "nts-vs16-x64": { zip: { path: "php-8.3.33-nts-Win32-vs16-x64.zip" } },
-      "ts-vs16-x64": { zip: { path: "php-8.3.33-Win32-vs16-x64.zip" } },
+      version: "8.3.36-1",
+      "nts-vs16-x64": { zip: { path: "php-8.3.36-1-nts-Win32-vs16-x64.zip" } },
+      "ts-vs16-x64": { zip: { path: "php-8.3.36-1-Win32-vs16-x64.zip" } },
     },
   });
 }

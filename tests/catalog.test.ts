@@ -72,6 +72,44 @@ test("parsePhpReleasesHtml accepts both nts and ts filenames", () => {
   assert.ok(parsed.some((v) => v.version === "8.5.9-ts"));
 });
 
+test("parsePhpReleasesJson accepts repack suffix versions like 8.4.27-1", () => {
+  const parsed = parsePhpReleasesJson({
+    "8.5": {
+      version: "8.5.12-1",
+      "nts-vs17-x64": { zip: { path: "php-8.5.12-1-nts-Win32-vs17-x64.zip" } },
+      "ts-vs17-x64": { zip: { path: "php-8.5.12-1-Win32-vs17-x64.zip" } },
+    },
+    "8.4": {
+      version: "8.4.27-1",
+      "nts-vs17-x64": { zip: { path: "php-8.4.27-1-nts-Win32-vs17-x64.zip" } },
+    },
+    "8.1": {
+      version: "8.1.34",
+      "nts-vs16-x64": { zip: { path: "php-8.1.34-nts-Win32-vs16-x64.zip" } },
+    },
+  });
+  assert.ok(parsed.some((v) => v.version === "8.5.12-1" && v.type === "nts"));
+  assert.ok(parsed.some((v) => v.version === "8.5.12-1-ts" && v.type === "ts"));
+  assert.ok(parsed.some((v) => v.version === "8.4.27-1"));
+  assert.ok(parsed.some((v) => v.version === "8.1.34"));
+  assert.equal(parsed[0].version, "8.5.12-1");
+  assert.match(
+    parsed[0].downloadUrl,
+    /php-8\.5\.12-1-nts-Win32-vs17-x64\.zip$/,
+  );
+});
+
+test("parsePhpReleasesHtml accepts repack suffix filenames", () => {
+  const html = `
+    <a href="php-8.4.27-1-nts-Win32-vs17-x64.zip">nts</a>
+    <a href="php-8.4.27-1-Win32-vs17-x64.zip">ts</a>
+  `;
+  const parsed = parsePhpReleasesHtml(html);
+  assert.equal(parsed.length, 2);
+  assert.ok(parsed.some((v) => v.version === "8.4.27-1"));
+  assert.ok(parsed.some((v) => v.version === "8.4.27-1-ts"));
+});
+
 test("selectNodeVersions keeps current plus even LTS majors", () => {
   const index = [
     { version: "v26.7.0", files: ["win-x64-zip"], lts: false },
